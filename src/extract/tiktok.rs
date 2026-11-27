@@ -110,6 +110,10 @@ fn parse_item(item: &Value, url: &Url) -> Option<Media> {
                     address,
                     MediaKind::Image,
                 );
+                format.headers.push((
+                    "User-Agent".into(),
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36".into(),
+                ));
                 format
                     .headers
                     .push(("Referer".into(), "https://www.tiktok.com/".into()));
@@ -135,6 +139,10 @@ fn add_format(media: &mut Media, address: &str, bitrate: Option<u64>) {
         MediaKind::Video,
     );
     format.bitrate = bitrate;
+    format.headers.push((
+        "User-Agent".into(),
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36".into(),
+    ));
     format
         .headers
         .push(("Referer".into(), "https://www.tiktok.com/".into()));

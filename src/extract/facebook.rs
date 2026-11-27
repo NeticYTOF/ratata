@@ -45,20 +45,37 @@ fn parse(html: &str, url: &Url) -> Result<Media> {
         "playable_url",
         "browser_native_sd_url",
     ] {
-        let pattern = format!(r#""{key}":"((?:\\.|[^"\\])*)""#);
+        let pattern = format!(r#"{key}\\?":\\?"([^"]+)""#);
         let Some(value) = Regex::new(&pattern)
             .ok()
             .and_then(|r| r.captures(html))
-            .map(|c| c[1].to_owned())
+            .map(|c| c[1].trim_end_matches('\\').to_owned())
         else {
             continue;
         };
-        let decoded = serde_json::from_str::<String>(&format!("\"{value}\"")).unwrap_or(value);
+        let mut decoded = value;
+        for _ in 0..3 {
+            match serde_json::from_str::<String>(&format!("\"{decoded}\"")) {
+                Ok(value) => decoded = value,
+                Err(_) => break,
+            }
+        }
         let decoded = decoded.replace("\\/", "/");
         if decoded.starts_with("http") && seen.insert(decoded.clone()) {
             let mut format = MediaFormat::new(key, decoded, MediaKind::Video);
             format.label = Some(key.to_owned());
             media.add(format);
+        }
+    }
+    if media.formats.is_empty()
+        && let Ok(regex) = Regex::new(r#"https?(?:\\/\\/|//)[^"\s<>]+\.mp4[^"\s<>]*"#)
+    {
+        for capture in regex.captures_iter(html) {
+            if let Some(raw) = capture.get(0).map(|m| m.as_str().replace("\\/", "/"))
+                && seen.insert(raw.clone())
+            {
+                media.add(MediaFormat::new("video", raw, MediaKind::Video));
+            }
         }
     }
     if media.formats.is_empty() {

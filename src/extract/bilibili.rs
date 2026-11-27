@@ -8,14 +8,16 @@ use serde_json::Value;
 use url::Url;
 
 pub async fn extract(url: &Url, client: &Client) -> Result<Media> {
+    let pattern = Regex::new(r"^(BV[0-9A-Za-z]+|av\d+)$")?;
     let bvid = url
         .path_segments()
         .and_then(|mut segments| {
-            Regex::new(r"^(BV[0-9A-Za-z]+|av\d+)$")
-                .ok()?
-                .captures(segments.find(|s| !s.is_empty())?)?
-                .get(0)
-                .map(|m| m.as_str().to_owned())
+            segments.find_map(|segment| pattern.captures(segment).map(|m| m[0].to_owned()))
+        })
+        .or_else(|| {
+            url.query_pairs()
+                .find(|(key, value)| key == "bvid" && pattern.is_match(value))
+                .map(|(_, value)| value.into_owned())
         })
         .ok_or_else(|| RatataError::UnsupportedUrl(url.to_string()))?;
     let headers = browser_headers("https://www.bilibili.com/");

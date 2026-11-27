@@ -1,7 +1,7 @@
 use crate::error::RatataError;
-use crate::http::{browser_headers, get_json};
+use crate::http::{browser_headers, get_json, get_text};
 use crate::model::{ManifestKind, Media, MediaFormat, MediaKind};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use reqwest::Client;
 use serde_json::Value;
 use url::Url;
@@ -17,13 +17,16 @@ pub async fn extract(url: &Url, client: &Client) -> Result<Media> {
         })
         .ok_or_else(|| RatataError::UnsupportedUrl(url.to_string()))?;
     let endpoint = format!("https://www.dailymotion.com/player/metadata/video/{id}");
-    let json = get_json(
-        client,
-        &endpoint,
-        &browser_headers("https://www.dailymotion.com/"),
-    )
-    .await?;
-    parse(&json, url, id).ok_or_else(|| RatataError::NoFormats(url.to_string()).into())
+    let headers = browser_headers("https://www.dailymotion.com/");
+    if let Ok(json) = get_json(client, &endpoint, &headers).await
+        && let Some(media) = parse(&json, url, id)
+    {
+        return Ok(media);
+    }
+    let page = get_text(client, url.as_str(), &headers)
+        .await
+        .unwrap_or_default();
+    super::generic::parse(url, &page).context("Dailymotion page had no playable media")
 }
 
 fn parse(json: &Value, url: &Url, id: &str) -> Option<Media> {
@@ -61,10 +64,28 @@ fn parse(json: &Value, url: &Url, id: &str) -> Option<Media> {
             }
         }
     }
+    if media.formats.is_empty()
+        && let Some(address) = find_media_url(json)
+    {
+        let mut format = MediaFormat::new("video", address.clone(), MediaKind::Video);
+        if address.contains(".m3u8") {
+            format.manifest = Some(ManifestKind::Hls);
+        }
+        media.add(format);
+    }
     if media.formats.is_empty() {
         None
     } else {
         Some(media)
+    }
+}
+
+fn find_media_url(value: &Value) -> Option<String> {
+    match value {
+        Value::String(raw) if raw.contains(".mp4") || raw.contains(".m3u8") => Some(raw.clone()),
+        Value::Object(map) => map.values().find_map(find_media_url),
+        Value::Array(items) => items.iter().find_map(find_media_url),
+        _ => None,
     }
 }
 

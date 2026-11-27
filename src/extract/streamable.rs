@@ -41,9 +41,13 @@ fn parse(json: &Value, url: &Url, code: &str) -> Option<Media> {
                 continue;
             };
             let mut format = MediaFormat::new(name, address, MediaKind::Video);
-            format.width = file["width"].as_u64().map(|v| v as u32);
-            format.height = file["height"].as_u64().map(|v| v as u32);
-            format.size = file["filesize"].as_u64();
+            format
+                .headers
+                .push(("Referer".into(), "https://streamable.com/".into()));
+            format.headers.push((
+                "User-Agent".into(),
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36".into(),
+            ));
             media.add(format);
         }
     }

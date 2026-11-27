@@ -1,7 +1,7 @@
 use crate::error::RatataError;
-use crate::http::{browser_headers, get_json};
+use crate::http::{browser_headers, get_json, get_text};
 use crate::model::{ManifestKind, Media, MediaFormat, MediaKind};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use reqwest::Client;
 use serde_json::Value;
 use url::Url;
@@ -20,8 +20,17 @@ pub async fn extract(url: &Url, client: &Client) -> Result<Media> {
     };
     let id = id.ok_or_else(|| RatataError::UnsupportedUrl(url.to_string()))?;
     let endpoint = format!("https://kick.com/api/v1/{kind}/{id}");
-    let json = get_json(client, &endpoint, &browser_headers("https://kick.com/")).await?;
-    parse(&json, url, id).ok_or_else(|| RatataError::NoFormats(url.to_string()).into())
+    let mut headers = browser_headers("https://kick.com/");
+    headers.push(("Accept".into(), "application/json, text/plain, */*".into()));
+    if let Ok(json) = get_json(client, &endpoint, &headers).await
+        && let Some(media) = parse(&json, url, id)
+    {
+        return Ok(media);
+    }
+    let page = get_text(client, url.as_str(), &headers)
+        .await
+        .unwrap_or_default();
+    super::generic::parse(url, &page).context("Kick page had no playable media")
 }
 
 fn parse(json: &Value, url: &Url, id: &str) -> Option<Media> {

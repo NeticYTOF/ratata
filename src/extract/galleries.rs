@@ -45,6 +45,11 @@ fn parse(html: &str, url: &Url, platform: &str, fallback_title: &str) -> Result<
     media.thumbnail = meta("og:image").clone();
     let mut seen = std::collections::HashSet::new();
     let mut add = |value: String, kind: MediaKind| {
+        let value = if kind == MediaKind::Image {
+            full_size(&value)
+        } else {
+            value
+        };
         if seen.insert(value.clone())
             && (value.starts_with("http://") || value.starts_with("https://"))
         {
@@ -87,6 +92,19 @@ fn parse(html: &str, url: &Url, platform: &str, fallback_title: &str) -> Result<
         return Err(RatataError::NoFormats(url.to_string()).into());
     }
     Ok(media)
+}
+
+fn full_size(value: &str) -> String {
+    if !value.contains("pinimg.com") {
+        return value.to_owned();
+    }
+    for prefix in ["736x", "474x", "236x"] {
+        let marker = format!("/{prefix}/");
+        if value.contains(&marker) {
+            return value.replace(&marker, "/originals/");
+        }
+    }
+    value.to_owned()
 }
 
 #[cfg(test)]

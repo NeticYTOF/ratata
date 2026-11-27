@@ -21,3 +21,22 @@ against real public URLs. Status: **works live**, **partial**, or **broken**.
 | Generic direct MP4 | works live | https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4 | 1,128,375 bytes, `ftypmp42` header. Fixed doubled `.mp4.mp4` filename. |
 
 Notes are appended as platforms are tested. `PROGRESS.md` carries the same summary table.
+
+## External Linux run (US datacenter IP, clean clone at 0199ed0)
+
+Build and tests passed (36 unit + 2 integration). Reported failures and current fixes:
+
+| Platform | Status | URL tested | Result / fix |
+| --- | --- | --- | --- |
+| Streamable | fixed, awaiting retest | https://streamable.com/moo | Probe failure; HEAD/GET probe now times out and falls back to a normal stream, with browser headers on CDN requests. |
+| Vimeo | fixed, awaiting retest | https://vimeo.com/76979871 | Hang at 0% with 42.5 MiB known size; probe now bounded by config timeout and falls back to streaming GET. DRM note retained separately. |
+| TikTok | fixed, awaiting retest | https://www.tiktok.com/@scout2015/video/6718335390845095173 | CDN 403; formats now carry the page User-Agent, Referer and cookies from the reqwest jar. |
+| SoundCloud | fixed, awaiting retest | https://soundcloud.com/forss/flickermood | Added homepage client-id discovery and API resolve fallback. |
+| Bilibili | fixed, awaiting retest | https://www.bilibili.com/video/BV1GJ411x7h7 | BV id now searched across all path segments and `bvid` query parameter. |
+| Dailymotion | fixed, awaiting retest | https://www.dailymotion.com/video/x2jvvep | Added recursive media URL discovery in metadata and HTML page fallback. |
+| Facebook | fixed, awaiting retest | https://www.facebook.com/facebook/videos/10153231379946729/ | Added double-escaped playable URL parsing and `.mp4` fallback scan. |
+| Kick | fixed, awaiting retest | https://kick.com/video/example | API 403 from Cloudflare; added browser headers and page fallback. |
+| Twitch clips | needs fresh URL | previous slug was dead | Fallback embed parsing retained; a current public clip is needed for verification. |
+| Reddit | broken from datacenter IP | https://www.reddit.com/r/videos/comments/8l0bfp/ | Expected 403; no action beyond www/api/old fallbacks. |
+| Imgur / Pinterest | fixed, awaiting retest | gallery / pin from Linux run | Pinterest thumbnail sizes are upgraded to `/originals/`; Imgur uses embed media URLs. |
+| UI leftovers | fixed | — | Flower glyphs and wording removed from progress and help; summary stays open until a key press on a TTY. |

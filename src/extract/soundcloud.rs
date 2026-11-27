@@ -8,35 +8,35 @@ use serde_json::Value;
 use url::Url;
 
 pub async fn extract(url: &Url, client: &Client) -> Result<Media> {
-    let page = get_text(
-        client,
-        url.as_str(),
-        &browser_headers("https://soundcloud.com/"),
-    )
-    .await?;
-    let client_id = Regex::new(r#""client_id"\s*:\s*"([^"]+)""#)
-        .ok()
-        .and_then(|r| r.captures(&page))
-        .map(|c| c[1].to_owned());
+    let headers = browser_headers("https://soundcloud.com/");
+    let page = get_text(client, url.as_str(), &headers).await?;
+    let mut client_id = find_client_id(&page);
+
+    if client_id.is_none() {
+        client_id = discover_client_id(client).await;
+    }
+    if let Some(id) = client_id.as_deref() {
+        let encoded =
+            percent_encoding::utf8_percent_encode(url.as_str(), percent_encoding::NON_ALPHANUMERIC);
+        let resolve = format!("https://api-v2.soundcloud.com/resolve?url={encoded}&client_id={id}");
+        if let Ok(info) = crate::http::get_json(client, &resolve, &headers).await {
+            let mut item = info.clone();
+            item["hydratable"] = serde_json::json!("track");
+            if let Some(media) = parse_hydration(&Value::Array(vec![item]), url, Some(id)) {
+                return resolve_streams(client, media, &headers).await;
+            }
+        }
+    }
+
     let hydration = Regex::new(r"(?s)window\.__sc_hydration\s*=\s*(\[.*?\]);")
         .ok()
         .and_then(|r| r.captures(&page))
         .and_then(|c| serde_json::from_str::<Value>(&c[1]).ok());
     if let Some(state) = hydration
-        && let Some(mut media) = parse_hydration(&state, url, client_id.as_deref())
+        && let Some(media) = parse_hydration(&state, url, client_id.as_deref())
     {
-        let headers = browser_headers("https://soundcloud.com/");
-        for format in &mut media.formats {
-            if format.url.contains("api-v2.soundcloud.com")
-                && let Ok(stream) = crate::http::get_json(client, &format.url, &headers).await
-                && let Some(address) = stream["url"].as_str()
-            {
-                format.url = address.to_owned();
-            }
-        }
-        return Ok(media);
+        return resolve_streams(client, media, &headers).await;
     }
-    // Some tracks expose a direct audio URL in Open Graph metadata.
     let document = scraper::Html::parse_document(&page);
     let selector =
         scraper::Selector::parse("meta[property=\"og:audio\"]").expect("static selector");
@@ -50,6 +50,42 @@ pub async fn extract(url: &Url, client: &Client) -> Result<Media> {
         return Ok(media);
     }
     Err(RatataError::Extraction("SoundCloud stream not found".into()).into())
+}
+
+fn find_client_id(page: &str) -> Option<String> {
+    for pattern in [
+        r#""client_id":"([^"]+)""#,
+        r#"client_id=([a-zA-Z0-9]{20,})"#,
+    ] {
+        if let Some(capture) = Regex::new(pattern).ok()?.captures(page) {
+            return Some(capture[1].to_owned());
+        }
+    }
+    None
+}
+
+async fn discover_client_id(client: &Client) -> Option<String> {
+    let headers = browser_headers("https://soundcloud.com/");
+    let home = get_text(client, "https://soundcloud.com/", &headers)
+        .await
+        .ok()?;
+    find_client_id(&home)
+}
+
+async fn resolve_streams(
+    client: &Client,
+    mut media: Media,
+    headers: &[(String, String)],
+) -> Result<Media> {
+    for format in &mut media.formats {
+        if format.url.contains("api-v2.soundcloud.com")
+            && let Ok(stream) = crate::http::get_json(client, &format.url, headers).await
+            && let Some(address) = stream["url"].as_str()
+        {
+            format.url = address.to_owned();
+        }
+    }
+    Ok(media)
 }
 
 fn parse_hydration(state: &Value, url: &Url, client_id: Option<&str>) -> Option<Media> {

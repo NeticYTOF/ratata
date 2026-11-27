@@ -4,7 +4,7 @@ use super::{DownloadManager, human_bytes};
 use crate::config::state_path;
 use crate::http::headers_map;
 use crate::model::DownloadJob;
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use futures_util::StreamExt;
 use reqwest::header::{ACCEPT_RANGES, CONTENT_LENGTH, CONTENT_RANGE, ETAG, RANGE};
 use std::path::{Path, PathBuf};
@@ -160,13 +160,17 @@ fn target_segment_bytes(manager: &DownloadManager, total: u64, job: &DownloadJob
 
 async fn probe(manager: &DownloadManager, job: &DownloadJob) -> Result<Probe> {
     let headers = headers_map(&job.format.headers)?;
-    let head = manager
-        .client
-        .head(&job.format.url)
-        .headers(headers.clone())
-        .send()
-        .await;
-    if let Ok(response) = head
+    let timeout = std::time::Duration::from_secs(manager.config.timeout_secs.max(1));
+    let head = tokio::time::timeout(
+        timeout,
+        manager
+            .client
+            .head(&job.format.url)
+            .headers(headers.clone())
+            .send(),
+    )
+    .await;
+    if let Ok(Ok(response)) = head
         && response.status().is_success()
     {
         let total = response
@@ -190,15 +194,26 @@ async fn probe(manager: &DownloadManager, job: &DownloadJob) -> Result<Probe> {
             ranges,
         });
     }
-    // Some hosts do not answer HEAD; a single-byte GET provides the same metadata.
-    let response = manager
-        .client
-        .get(&job.format.url)
-        .headers(headers)
-        .header(RANGE, "bytes=0-0")
-        .send()
-        .await
-        .context("probing download URL")?;
+
+    // Some hosts reject HEAD or byte ranges. Probe briefly, then fall back to a
+    // normal streaming GET rather than failing before any bytes are requested.
+    let probed = tokio::time::timeout(
+        timeout,
+        manager
+            .client
+            .get(&job.format.url)
+            .headers(headers)
+            .header(RANGE, "bytes=0-0")
+            .send(),
+    )
+    .await;
+    let Ok(Ok(response)) = probed else {
+        return Ok(Probe {
+            total: job.format.size,
+            etag: None,
+            ranges: false,
+        });
+    };
     let total = response
         .headers()
         .get(CONTENT_RANGE)
@@ -211,7 +226,8 @@ async fn probe(manager: &DownloadManager, job: &DownloadJob) -> Result<Probe> {
                 .get(CONTENT_LENGTH)
                 .and_then(|v| v.to_str().ok())
                 .and_then(|v| v.parse().ok())
-        });
+        })
+        .or(job.format.size);
     let etag = response
         .headers()
         .get(ETAG)
