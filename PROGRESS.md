@@ -29,7 +29,7 @@ Updated: 2026-11-27
   Windows x86_64 zip, Linux x86_64 tar.gz and SHA256SUMS.
 - TUI batch fixes: MP3 jobs finish on final `.mp3` path with intermediate and sidecar cleanup,
   per-job temp/final paths avoid collisions, invalid links become friendly failed rows,
-  filenames trim edge underscores and use `(1)` duplicates, summary header shows gathered bytes/elapsed.
+- Summary screen now shows friendly failure reasons on failed rows and hides the saved-folder line when zero files were saved.
 
 ## Speed benchmarks (`scripts/bench.py`, Windows, release build)
 

@@ -272,15 +272,6 @@ fn draw_summary(app: &App, frame: &mut Frame, area: Rect, palette: &theme::Palet
         } else {
             "✗"
         };
-        let raw_name = job
-            .destination
-            .file_name()
-            .map(|value| value.to_string_lossy().into_owned())
-            .unwrap_or_else(|| job.destination.to_string_lossy().into_owned());
-        let name: String = raw_name
-            .chars()
-            .filter(|ch| (*ch as u32) < 0x10000 && !ch.is_control())
-            .collect();
         let seconds = app
             .finished_at
             .get(&job.id)
@@ -291,6 +282,32 @@ fn draw_summary(app: &App, frame: &mut Frame, area: Rect, palette: &theme::Palet
         } else {
             palette.error
         };
+        if progress.state != JobState::Done {
+            let reason = progress
+                .error
+                .as_deref()
+                .map(friendly_failure)
+                .unwrap_or_else(|| "Failed".to_owned());
+            let content = if job.media.platform == "link" {
+                format!("{mark} {reason}")
+            } else {
+                format!(
+                    "{mark} {} — {reason}",
+                    truncate_display(&progress.label, 32)
+                )
+            };
+            lines.push(panel_line(&content, width, palette, color));
+            continue;
+        }
+        let raw_name = job
+            .destination
+            .file_name()
+            .map(|value| value.to_string_lossy().into_owned())
+            .unwrap_or_else(|| job.destination.to_string_lossy().into_owned());
+        let name: String = raw_name
+            .chars()
+            .filter(|ch| (*ch as u32) < 0x10000 && !ch.is_control())
+            .collect();
         lines.push(panel_line(
             &format!(
                 "{mark} {name}  {}  {}",
@@ -302,7 +319,17 @@ fn draw_summary(app: &App, frame: &mut Frame, area: Rect, palette: &theme::Palet
             color,
         ));
     }
-    if let Some(folder) = app.jobs.first().and_then(|job| job.destination.parent()) {
+    if done > 0
+        && let Some(folder) = app
+            .jobs
+            .iter()
+            .find(|job| {
+                app.progress
+                    .get(&job.id)
+                    .is_some_and(|p| p.state == JobState::Done)
+            })
+            .and_then(|job| job.destination.parent())
+    {
         lines.push(panel_line(
             &format!("saved in {}", folder.display()),
             width,
@@ -510,5 +537,65 @@ mod tests {
         for row in banner {
             assert_eq!(display_width(&row), 6 * 5 + 5, "banner row: {row}");
         }
+    }
+
+    #[test]
+    fn summary_shows_failure_reason_and_hides_empty_saved_line() {
+        let render = |state: JobState, error: Option<String>| -> String {
+            let job = DownloadJob {
+                id: 0,
+                media: Media::new("link", "not-a-url", "not-a-url"),
+                format: MediaFormat::new("f1", "https://invalid.local/", MediaKind::Other),
+                destination: std::path::PathBuf::from("invalid-link"),
+                temp: None,
+                mp3: None,
+                keep_source: false,
+                validation_error: error.clone(),
+            };
+            let mut app = App::new(vec![job]);
+            app.update(JobProgress {
+                id: 0,
+                label: "not-a-url".into(),
+                downloaded: 0,
+                total: None,
+                speed: 0.0,
+                state,
+                error,
+                segments: Vec::new(),
+                eta: None,
+            });
+            app.phase = Phase::Summary;
+            let mut terminal = Terminal::new(TestBackend::new(100, 20)).unwrap();
+            terminal
+                .draw(|frame| {
+                    let area = frame.area();
+                    let palette = theme::palette(theme::ColorMode::True);
+                    draw_summary(&app, frame, area, &palette);
+                })
+                .unwrap();
+            terminal
+                .backend()
+                .buffer()
+                .content
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect()
+        };
+        let failed = render(
+            JobState::Failed,
+            Some("That does not look like a link. Try: paste a full URL".into()),
+        );
+        assert!(
+            failed.contains("Not a link"),
+            "failure reason missing: {failed}"
+        );
+        assert!(
+            !failed.contains("saved in"),
+            "empty saved line shown: {failed}"
+        );
+        assert!(
+            !failed.contains("not-a-url"),
+            "raw failed row shown: {failed}"
+        );
     }
 }
