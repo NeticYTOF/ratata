@@ -43,6 +43,7 @@ ratata download URL --all-formats
 # Control speed
 ratata download URL --segments 12 --retries 6
 ratata download URL -o ~/Videos/my-clip.mp4
+ratata download URL --cookies ~/cookies.txt
 
 # Configuration
 ratata config path
@@ -74,8 +75,9 @@ Multiple URLs are downloaded concurrently. Existing files are never overwritten;
 | Any direct media URL | mp4, webm, mp3, images, m3u8, mpd |
 | Any HTML page | `og:video`, `og:image`, JSON-LD, `<video>`, `<source>`, `<img>` |
 
-Extraction depends on what each site serves publicly without login. Private or
-age-restricted content needs browser cookies, which are not bundled.
+Extraction depends on what each site serves publicly without login. Export a Netscape
+cookie file from your browser and pass `--cookies FILE` for private media; cookies are
+sent only to their matching domains.
 
 ## Speed design
 

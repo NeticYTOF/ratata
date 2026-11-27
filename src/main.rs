@@ -36,6 +36,8 @@ struct Cli {
         help = "Download every available format (galleries)"
     )]
     all_formats: bool,
+    #[arg(long, global = true, help = "Load Netscape cookies for private media")]
+    cookies: Option<String>,
     #[arg(long, global = true, help = "Overwrite existing files")]
     overwrite: bool,
     #[arg(long, global = true, help = "Verbose diagnostics")]
@@ -85,6 +87,13 @@ async fn main() -> Result<()> {
     }
     if cli.verbose {
         config.keyring = true;
+    }
+    if let Some(path) = cli.cookies.as_deref() {
+        config.cookies = Some(
+            ratata::expand_tilde_path(path)
+                .to_string_lossy()
+                .into_owned(),
+        );
     }
 
     match cli.command {

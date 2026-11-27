@@ -17,6 +17,7 @@ pub struct Config {
     pub overwrite: bool,
     pub proxy: Option<String>,
     pub ffmpeg: Option<String>,
+    pub cookies: Option<String>,
     pub keyring: bool,
 }
 
@@ -35,6 +36,7 @@ impl Default for Config {
             overwrite: false,
             proxy: None,
             ffmpeg: None,
+            cookies: None,
             keyring: false,
         }
     }

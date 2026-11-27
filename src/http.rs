@@ -1,10 +1,13 @@
 use crate::config::Config;
 use crate::error::RatataError;
-use anyhow::Result;
+use anyhow::{Context, Result};
+use reqwest::cookie::Jar;
 use reqwest::header::{AUTHORIZATION, COOKIE, HeaderMap, HeaderValue, REFERER, USER_AGENT};
 use reqwest::{Client, ClientBuilder};
 use serde_json::Value;
+use std::sync::Arc;
 use std::time::Duration;
+use url::Url;
 
 pub fn build_client(config: &Config) -> Result<Client> {
     let mut builder = ClientBuilder::new()
@@ -20,7 +23,36 @@ pub fn build_client(config: &Config) -> Result<Client> {
     if let Some(proxy) = &config.proxy {
         builder = builder.proxy(reqwest::Proxy::all(proxy)?);
     }
+    if let Some(path) = &config.cookies {
+        let jar = Arc::new(Jar::default());
+        let raw =
+            std::fs::read_to_string(path).with_context(|| format!("reading cookies {}", path))?;
+        for (domain, cookie_path, name, value) in parse_netscape(&raw) {
+            let url = Url::parse(&format!("https://{domain}{cookie_path}"))?;
+            jar.add_cookie_str(&format!("{name}={value}"), &url);
+        }
+        builder = builder.cookie_provider(jar);
+    }
     Ok(builder.build()?)
+}
+
+/// Parses Netscape cookie files (`domain flag path secure expiry name value`).
+pub fn parse_netscape(raw: &str) -> Vec<(String, String, String, String)> {
+    raw.lines()
+        .filter(|line| !line.trim_start().starts_with('#') && !line.trim().is_empty())
+        .filter_map(|line| {
+            let fields: Vec<&str> = line.split('\t').collect();
+            if fields.len() < 7 {
+                return None;
+            }
+            Some((
+                fields[0].to_owned(),
+                fields[2].to_owned(),
+                fields[5].to_owned(),
+                fields[6].to_owned(),
+            ))
+        })
+        .collect()
 }
 
 pub fn headers_map(pairs: &[(String, String)]) -> Result<HeaderMap> {
@@ -83,4 +115,34 @@ pub fn browser_headers(referer: &str) -> Vec<(String, String)> {
         ("Accept-Language".into(), "en-US,en;q=0.9".into()),
         ("Referer".into(), referer.into()),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_netscape_cookies() {
+        let raw = "# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tFALSE\t0\tsession\tabc123\n";
+        let cookies = parse_netscape(raw);
+        assert_eq!(cookies.len(), 1);
+        assert_eq!(
+            cookies[0],
+            (
+                ".youtube.com".into(),
+                "/".into(),
+                "session".into(),
+                "abc123".into()
+            )
+        );
+        assert_eq!(
+            cookies[0],
+            (
+                ".youtube.com".into(),
+                "/".into(),
+                "session".into(),
+                "abc123".into()
+            )
+        );
+    }
 }

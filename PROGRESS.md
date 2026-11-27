@@ -15,10 +15,10 @@ Updated: 2026-11-27
 - Flower-tunnel TUI: perspective rings, flowers, drifting petals, breathing bloom,
   theme cycling, live job bars, error detail panel, keyboard controls (q/p/space/j/k/t).
 - `--all-formats` downloads every available format as separate suffixed files (galleries).
-- README with install, usage, platform table, speed design, config and dev commands.
-- End-to-end smoke run passed: 3.3 MB segmented local download, SHA-256 identical.
-- Cross-platform: no hardcoded separators, `std::path`, Windows VT enabled via crossterm.
-- Local verification on Windows: `cargo build`, `cargo test --all-targets` (28 passed),
+- `--cookies FILE` loads a Netscape cookie jar into a domain-scoped reqwest jar.
+- Integration tests cover byte-exact segmented download and resume from persisted state (2 tests).
+- Test suite: 28 unit tests + 2 integration tests passing locally.
+- Local verification on Windows: `cargo build`, `cargo test --all-targets` (30 passed),
   `cargo clippy --all-targets -- -D warnings`, `cargo fmt --all` applied cleanly.
 - CI workflow (fmt/build/test/clippy on Ubuntu + Windows) and release workflow
   (Windows/Linux x86_64 binaries) added under `.github/workflows/`.
