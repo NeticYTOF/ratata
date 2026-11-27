@@ -11,7 +11,7 @@ use url::Url;
 
 const DEFAULT_KEY: &str = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
 
-pub async fn extract(url: &Url, client: &Client, config: &Config) -> Result<Media> {
+pub async fn extract(url: &Url, client: &Client, _config: &Config) -> Result<Media> {
     let id = video_id(url)?;
     let watch_url = format!("https://www.youtube.com/watch?v={id}&hl=en");
     let page = get_text(client, &watch_url, &browser_headers(&watch_url))
@@ -27,9 +27,18 @@ pub async fn extract(url: &Url, client: &Client, config: &Config) -> Result<Medi
         ("IOS", "20.10.4", None, "iOS"),
         ("TVHTML5", "7.20250101.18.00", None, "TV"),
         ("WEB", client_version.as_str(), None, "Web"),
+        (
+            "WEB_EMBEDDED_PLAYER",
+            "1.20241009.01.00",
+            None,
+            "Web embedded",
+        ),
+        ("MWEB", "2.20250101.00.00", None, "Mobile web"),
+        ("ANDROID_VR", "1.60.19", None, "Android VR"),
+        ("TVHTML5_SIMPLY_EMBEDDED_PLAYER", "2.0", None, "TV embedded"),
     ];
     let mut last_status = String::new();
-    for (name, version, sdk, label) in clients.into_iter().take(config.retries.max(1) as usize) {
+    for (name, version, sdk, label) in clients {
         let mut client_info = json!({
             "clientName": name,
             "clientVersion": version,
@@ -97,7 +106,14 @@ pub async fn extract(url: &Url, client: &Client, config: &Config) -> Result<Medi
             return Ok(media);
         }
     }
-    Err(RatataError::Extraction(format!("YouTube refused video {id} ({last_status})")).into())
+    let hint = if last_status.to_ascii_lowercase().contains("bot")
+        || last_status.to_ascii_lowercase().contains("sign in")
+    {
+        "; YouTube asked for a bot check — use --cookies cookies.txt"
+    } else {
+        ""
+    };
+    Err(RatataError::Extraction(format!("YouTube refused video {id} ({last_status}){hint}")).into())
 }
 
 fn video_id(url: &Url) -> Result<String> {

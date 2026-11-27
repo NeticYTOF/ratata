@@ -178,13 +178,47 @@ fn parse_spotify_embed(html: &str) -> SpotifyEmbed {
 async fn apple_metadata(url: &Url, client: &Client) -> Result<Vec<TrackMetadata>> {
     let id = apple_id(url).context("Apple Music link has no track or album id")?;
     let endpoint = format!("https://itunes.apple.com/lookup?id={id}&entity=song&limit=200");
-    let json = get_json(
-        client,
-        &endpoint,
-        &browser_headers("https://music.apple.com/"),
+    let json = tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        get_json(
+            client,
+            &endpoint,
+            &browser_headers("https://music.apple.com/"),
+        ),
     )
-    .await?;
-    Ok(parse_apple_lookup(&json))
+    .await
+    .context("Apple Music lookup timed out")??;
+    let tracks = parse_apple_lookup(&json);
+    if tracks.is_empty() {
+        return Err(anyhow::anyhow!("Apple Music has no track for id {id}"));
+    }
+    Ok(tracks)
+}
+pub async fn soundcloud_fallback_metadata(url: &Url, client: &Client) -> Result<TrackMetadata> {
+    let oembed = format!(
+        "https://soundcloud.com/oembed?format=json&url={}",
+        percent_encoding::utf8_percent_encode(url.as_str(), percent_encoding::NON_ALPHANUMERIC)
+    );
+    let json = get_json(client, &oembed, &browser_headers("https://soundcloud.com/")).await?;
+    let title = json["title"]
+        .as_str()
+        .unwrap_or("SoundCloud track")
+        .to_owned();
+    let author = json["author_name"]
+        .as_str()
+        .unwrap_or("Unknown artist")
+        .to_owned();
+    let (title, artist) = split_title_artist(&title, &author);
+    Ok(TrackMetadata {
+        title,
+        artist,
+        album: String::new(),
+        year: None,
+        track: None,
+        duration: None,
+        artwork: json["thumbnail_url"].as_str().map(str::to_owned),
+        source: "SoundCloud".into(),
+    })
 }
 
 pub fn parse_apple_lookup(json: &Value) -> Vec<TrackMetadata> {

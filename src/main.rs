@@ -74,6 +74,9 @@ struct Cli {
     /// Keep the original audio file after MP3 conversion
     #[arg(long, global = true, hide = true)]
     keep_source: bool,
+    /// Import cookies exported from a browser profile
+    #[arg(long, global = true, hide = true)]
+    cookies_from_browser: Option<String>,
     /// Extra diagnostics
     #[arg(long, global = true, hide = true)]
     verbose: bool,
@@ -159,6 +162,19 @@ async fn run() -> Result<()> {
                 .into_owned(),
         );
     }
+    if let Some(browser) = cli.cookies_from_browser.as_deref() {
+        let path = Config::path()?
+            .parent()
+            .unwrap_or(std::path::Path::new("."))
+            .join(format!("{browser}.cookies.txt"));
+        if !path.exists() {
+            return Err(anyhow!(
+                "No exported cookie file for {browser} at {}. Export Netscape cookies from your browser and save it there",
+                path.display()
+            ));
+        }
+        config.cookies = Some(path.to_string_lossy().into_owned());
+    }
 
     let mut mp3_mode = cli.mp3;
     let mut urls = Vec::new();
@@ -230,6 +246,28 @@ async fn run() -> Result<()> {
                     artwork: track.artwork.clone(),
                 };
                 sources.push((media, Some(meta)));
+            }
+        } else if parsed
+            .host_str()
+            .is_some_and(|host| host.contains("soundcloud.com"))
+        {
+            match extract::extract(url, &client, &config).await {
+                Ok(media) => sources.push((media, None)),
+                Err(_) => {
+                    println!("  · SoundCloud stream unavailable; matching track on YouTube Music");
+                    let track =
+                        extract::music::soundcloud_fallback_metadata(&parsed, &client).await?;
+                    let media = extract::music::match_on_youtube(&track, &client).await?;
+                    sources.push((
+                        media,
+                        Some(AudioMeta {
+                            title: track.title.clone(),
+                            artist: track.artist.clone(),
+                            artwork: track.artwork.clone(),
+                            ..AudioMeta::default()
+                        }),
+                    ));
+                }
             }
         } else {
             let media = extract::extract(url, &client, &config).await?;
@@ -369,6 +407,8 @@ fn friendly_error(error: &anyhow::Error) -> String {
     let lower = message.to_ascii_lowercase();
     let suggestion = if lower.contains("unsupported url") {
         "Check that the link is complete, or paste a direct media link such as .mp4 or .m3u8."
+    } else if lower.contains("bot") || lower.contains("sign in") || lower.contains("captcha") {
+        "The site asked for a bot check. Export your browser cookies and retry with --cookies cookies.txt (or --cookies-from-browser BROWSER)."
     } else if lower.contains("no media formats") || lower.contains("no matching format") {
         "The post may be private or restricted. Try ratata info LINK, or use --cookies with a cookie file."
     } else if lower.contains("403") || lower.contains("401") || lower.contains("forbidden") {

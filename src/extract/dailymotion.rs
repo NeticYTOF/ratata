@@ -11,10 +11,10 @@ use url::Url;
 pub async fn extract(url: &Url, client: &Client) -> Result<Media> {
     let id = url
         .path_segments()
-        .and_then(|segments| {
+        .and_then(|mut segments| {
             segments
-                .filter(|s| !s.is_empty())
-                .find(|s| s.chars().all(|c| c.is_ascii_alphanumeric()))
+                .find(|segment| segment.starts_with('x') && segment.len() > 1)
+                .map(str::to_owned)
         })
         .ok_or_else(|| RatataError::UnsupportedUrl(url.to_string()))?;
     let endpoint = format!("https://www.dailymotion.com/player/metadata/video/{id}");
@@ -22,13 +22,13 @@ pub async fn extract(url: &Url, client: &Client) -> Result<Media> {
     headers.retain(|(key, _)| key != "Referer");
     headers.push(("Referer".into(), url.to_string()));
     if let Ok(json) = get_json(client, &endpoint, &headers).await
-        && let Some(media) = parse(&json, url, id)
+        && let Some(media) = parse(&json, url, &id)
     {
         return Ok(media);
     }
     let alternate = format!("{endpoint}?locale=en-US&client_type=website");
     if let Ok(json) = get_json(client, &alternate, &headers).await
-        && let Some(media) = parse(&json, url, id)
+        && let Some(media) = parse(&json, url, &id)
     {
         return Ok(media);
     }

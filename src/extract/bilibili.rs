@@ -26,6 +26,7 @@ pub async fn extract(url: &Url, client: &Client) -> Result<Media> {
     headers.push(("Origin".into(), "https://www.bilibili.com".into()));
     headers.push(("Accept".into(), "application/json, text/plain, */*".into()));
     headers.push(("Accept-Language".into(), "zh-CN,zh;q=0.9,en;q=0.8".into()));
+    let _ = crate::http::get_text(client, url.as_str(), &headers).await;
     let cookie = bilibili_cookie(client, &headers).await;
     headers.push(("Cookie".into(), cookie));
     let view = get_json(
