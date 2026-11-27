@@ -22,7 +22,11 @@ pub fn direct(url: &Url) -> Result<Media> {
         .filter(|s| !s.is_empty())
         .unwrap_or("asset");
     let title = percent_decode(name);
-    let title = title.rsplit_once('.').map(|(stem, _)| stem).unwrap_or(&title).to_owned();
+    let title = title
+        .rsplit_once('.')
+        .map(|(stem, _)| stem)
+        .unwrap_or(&title)
+        .to_owned();
     let kind = kind_for(url.path());
     let mut format = MediaFormat::new("direct", url.as_str(), kind);
     if url.path().ends_with(".m3u8") {

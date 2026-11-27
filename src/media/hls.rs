@@ -7,7 +7,7 @@ use aes::Aes128;
 use aes::cipher::{BlockDecrypt, KeyInit, generic_array::GenericArray};
 use anyhow::{Context, Result, bail};
 use futures_util::StreamExt;
-use reqwest::header::CONTENT_LENGTH;
+use reqwest::header::{CONTENT_LENGTH, RANGE};
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio::fs::OpenOptions;
@@ -24,6 +24,8 @@ struct KeyInfo {
 struct Segment {
     url: String,
     key: Option<KeyInfo>,
+    /// `EXT-X-BYTERANGE:length@offset`, used by fMP4 playlists with one big file.
+    range: Option<(u64, u64)>,
 }
 
 pub async fn download(
@@ -40,6 +42,10 @@ pub async fn download(
     }
     let playlist = get_text(&manager.client, &playlist_url, &job.format.headers).await?;
     let (segments, init) = parse_playlist(&playlist_url, &playlist)?;
+    if segments.is_empty() {
+        bail!("empty HLS playlist");
+    }
+    crate::download::direct::ensure_parent(&job.destination)?;
 
     let is_ts = segments
         .first()
@@ -57,8 +63,16 @@ pub async fn download(
     let parts: Vec<PathBuf> = (0..part_count)
         .map(|i| destination.with_file_name(format!("{stem}.hls{i}")))
         .collect();
+    let cleanup_parts = parts.clone();
 
-    if let Ok(response) = manager
+    let ranged_total: u64 = segments
+        .iter()
+        .chain(init.iter())
+        .filter_map(|s| s.range.map(|(len, _)| len))
+        .sum();
+    if ranged_total > 0 {
+        tracker.set_total(ranged_total);
+    } else if let Ok(response) = manager
         .client
         .head(&segments[0].url)
         .headers(headers)
@@ -70,43 +84,33 @@ pub async fn download(
             .and_then(|v| v.to_str().ok())
             .and_then(|v| v.parse::<u64>().ok())
     {
-        tracker.set_total(first_size * (parts.len() as u64));
+        tracker.set_total(first_size * parts.len() as u64);
     }
 
-    let concurrency = manager.config.segments.saturating_mul(4).clamp(4, 64);
-    let cleanup_parts = parts.clone();
-    let mut tasks = futures_util::stream::iter(
-        parts
-            .into_iter()
-            .enumerate()
-            .zip(std::iter::once(None).chain(segments.iter().cloned().map(Some)))
-            .map(|((index, part), segment)| {
-                let ctx = ctx.clone();
-                let tracker = tracker.clone();
-                let part = part.clone();
-                let init = init.clone();
-                async move {
-                    let url = match &segment {
-                        Some(segment) => segment.url.clone(),
-                        None => init.clone().expect("init part has a URL"),
-                    };
-                    let key = segment.and_then(|s| s.key.clone());
-                    let bytes = fetch(&ctx, &url, key).await?;
-                    let mut file = OpenOptions::new()
-                        .create(true)
-                        .write(true)
-                        .truncate(true)
-                        .open(&part)
-                        .await?;
-                    file.write_all(&bytes).await?;
-                    file.flush().await?;
-                    tracker.add(bytes.len() as u64);
-                    let _ = index;
-                    Ok::<(), anyhow::Error>(())
-                }
-            }),
-    )
-    .buffer_unordered(concurrency);
+    let concurrency = manager.config.segments.clamp(2, 12);
+    let sequence: Vec<Segment> = std::iter::once(init.clone())
+        .flatten()
+        .chain(segments.iter().cloned())
+        .collect();
+    let mut tasks =
+        futures_util::stream::iter(parts.into_iter().zip(sequence).map(|(part, segment)| {
+            let ctx = ctx.clone();
+            let tracker = tracker.clone();
+            async move {
+                let bytes = fetch(&ctx, &segment).await?;
+                let mut file = OpenOptions::new()
+                    .create(true)
+                    .truncate(true)
+                    .write(true)
+                    .open(&part)
+                    .await?;
+                file.write_all(&bytes).await?;
+                file.flush().await?;
+                tracker.add(bytes.len() as u64);
+                Ok::<(), anyhow::Error>(())
+            }
+        }))
+        .buffer_unordered(concurrency);
 
     let mut failures = Vec::new();
     while let Some(result) = tasks.next().await {
@@ -133,19 +137,19 @@ pub async fn download(
     Ok(destination)
 }
 
-async fn fetch(
-    ctx: &crate::download::WorkerContext,
-    url: &str,
-    key: Option<KeyInfo>,
-) -> Result<Vec<u8>> {
+async fn fetch(ctx: &crate::download::WorkerContext, segment: &Segment) -> Result<Vec<u8>> {
     let mut last = String::new();
     for attempt in 0..=ctx.config.retries {
         ctx.gate().await?;
-        match ctx.client.get(url).send().await {
+        let mut request = ctx.client.get(&segment.url);
+        if let Some((length, offset)) = segment.range {
+            request = request.header(RANGE, format!("bytes={offset}-{}", offset + length - 1));
+        }
+        match request.send().await {
             Ok(response) if response.status().is_success() => {
                 let bytes = response.bytes().await?.to_vec();
-                return match key {
-                    Some(key) => decrypt(&ctx.client, url, &bytes, &key).await,
+                return match &segment.key {
+                    Some(key) => decrypt(&ctx.client, &segment.url, &bytes, key).await,
                     None => Ok(bytes),
                 };
             }
@@ -246,12 +250,29 @@ fn select_variant(base: &str, master: &str) -> Result<String> {
     best.map(|(_, url)| url).context("no HLS variants")
 }
 
-fn parse_playlist(base: &str, playlist: &str) -> Result<(Vec<Segment>, Option<String>)> {
+fn parse_range(line: &str) -> Option<(u64, u64)> {
+    let value = line.strip_prefix("#EXT-X-BYTERANGE:")?;
+    let (length, offset) = value
+        .split_once('@')
+        .map(|(length, offset)| (length, Some(offset)))
+        .unwrap_or((value, None));
+    let length = length.parse().ok()?;
+    let offset = match offset {
+        Some(offset) => offset.parse().ok()?,
+        None => 0,
+    };
+    Some((length, offset))
+}
+
+fn parse_playlist(base: &str, playlist: &str) -> Result<(Vec<Segment>, Option<Segment>)> {
     let mut segments = Vec::new();
     let mut init = None;
     let mut current_key: Option<KeyInfo> = None;
+    let mut pending_range: Option<(u64, u64)> = None;
     for line in playlist.lines().map(str::trim) {
-        if line.starts_with("#EXT-X-KEY") {
+        if let Some(range) = parse_range(line) {
+            pending_range = Some(range);
+        } else if line.starts_with("#EXT-X-KEY") {
             let method = attribute(line, "METHOD").unwrap_or_default();
             current_key = if method == "AES-128" {
                 attribute(line, "URI").map(|uri| KeyInfo {
@@ -263,12 +284,19 @@ fn parse_playlist(base: &str, playlist: &str) -> Result<(Vec<Segment>, Option<St
             };
         } else if line.starts_with("#EXT-X-MAP") {
             if let Some(uri) = attribute(line, "URI") {
-                init = Some(resolve(base, &unquote(&uri))?);
+                let range = attribute(line, "BYTERANGE")
+                    .and_then(|v| parse_range(&format!("#EXT-X-BYTERANGE:{}", unquote(&v))));
+                init = Some(Segment {
+                    url: resolve(base, &unquote(&uri))?,
+                    key: None,
+                    range,
+                });
             }
         } else if !line.is_empty() && !line.starts_with('#') {
             segments.push(Segment {
                 url: resolve(base, line)?,
                 key: current_key.clone(),
+                range: pending_range.take(),
             });
         }
     }
@@ -304,6 +332,16 @@ mod tests {
             segments[1].key.as_ref().unwrap().iv.as_deref(),
             Some("0x00112233445566778899aabbccddeeff")
         );
+    }
+
+    #[test]
+    fn parses_fmp4_byteranges() {
+        let playlist = "#EXTM3U\n#EXT-X-MAP:URI=\"main.mp4\",BYTERANGE=\"721@0\"\n#EXTINF:6,\n#EXT-X-BYTERANGE:5874288@721\nmain.mp4\n#EXTINF:6,\n#EXT-X-BYTERANGE:5863101@5875009\nmain.mp4\n";
+        let (segments, init) =
+            parse_playlist("https://cdn.example/hls/index.m3u8", playlist).unwrap();
+        assert_eq!(init.unwrap().range, Some((721, 0)));
+        assert_eq!(segments[0].range, Some((5_874_288, 721)));
+        assert_eq!(segments[1].range, Some((5_863_101, 5_875_009)));
     }
 
     #[test]
