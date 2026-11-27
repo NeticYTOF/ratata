@@ -249,4 +249,41 @@ mod tests {
         assert!(rendered.contains("Bloom clip"));
         assert!(rendered.contains("50.0") || rendered.contains("MiB"));
     }
+
+    #[test]
+    fn renders_at_80_columns() {
+        let job = DownloadJob {
+            id: 0,
+            media: Media::new(
+                "YouTube",
+                "https://example.test/watch",
+                "A very long video title that will be truncated",
+            ),
+            format: crate::MediaFormat::new(
+                "f1",
+                "https://example.test/clip.mp4",
+                crate::MediaKind::Video,
+            ),
+            destination: std::path::PathBuf::from("clip.mp4"),
+        };
+        let mut app = App::new(vec![job]);
+        app.update(JobProgress {
+            id: 0,
+            label: "A very long video title that will be truncated".into(),
+            downloaded: 1_000_000,
+            total: Some(10_000_000),
+            speed: 2_000_000.0,
+            state: JobState::Running,
+            error: None,
+            segments: vec![true, false, false],
+            eta: Some(4.0),
+        });
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        terminal.draw(|frame| render::draw(&app, frame)).unwrap();
+        let buffer: &Buffer = terminal.backend().buffer();
+        let rendered: String = buffer.content.iter().map(|cell| cell.symbol()).collect();
+        assert!(rendered.contains("YT"));
+        assert!(rendered.contains("MiB"));
+        assert!(rendered.contains('%'));
+    }
 }

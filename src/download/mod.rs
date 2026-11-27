@@ -100,7 +100,13 @@ impl DownloadManager {
             None => direct::download(self, job, tracker).await,
         };
         let blocked = result.as_ref().err().is_some_and(|error| {
-            error.to_string().contains("403") || error.to_string().contains("401")
+            let message = error.to_string().to_ascii_lowercase();
+            message.contains("403")
+                || message.contains("401")
+                || message.contains("forbidden")
+                || message.contains("stalled")
+                || message.contains("no download progress")
+                || message.contains("timed out")
         });
         if blocked {
             let first_error = result
@@ -112,11 +118,7 @@ impl DownloadManager {
                 .media
                 .formats
                 .iter()
-                .filter(|format| {
-                    format.id != job.format.id
-                        && format.kind == job.format.kind
-                        && format.manifest.is_none()
-                })
+                .filter(|format| format.id != job.format.id && format.kind == job.format.kind)
                 .take(6)
                 .cloned()
                 .collect();

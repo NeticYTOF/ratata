@@ -378,22 +378,42 @@ pub fn best_match<'a>(track: &TrackMetadata, candidates: &'a [Candidate]) -> Opt
         .max_by(|a, b| match_score(track, a).total_cmp(&match_score(track, b)))
 }
 
+pub fn rank_candidates(track: &TrackMetadata, candidates: &[Candidate]) -> Vec<Candidate> {
+    let mut ranked = candidates.to_vec();
+    ranked.sort_by(|a, b| match_score(track, b).total_cmp(&match_score(track, a)));
+    ranked
+}
+
 pub async fn match_on_youtube(track: &TrackMetadata, client: &Client) -> Result<Media> {
     let query = format!("{} {} official audio", track.artist, track.title);
     let candidates = search_youtube(client, &query).await?;
-    let best = best_match(track, &candidates)
-        .context("no matching YouTube Music result for this track")?;
-    let watch = format!("https://www.youtube.com/watch?v={}", best.video_id);
-    let mut media =
-        super::youtube::extract(&Url::parse(&watch)?, client, &crate::Config::default()).await?;
-    media.platform = format!("{} → YT Music", track.source);
-    media.title = format!("{} - {}", track.artist, track.title);
-    media.author = Some(track.artist.clone());
-    media.thumbnail = track.artwork.clone().or(media.thumbnail);
-    media
-        .formats
-        .sort_by_key(|format| std::cmp::Reverse(format.bitrate.unwrap_or(format.quality())));
-    Ok(media)
+    let ranked = rank_candidates(track, &candidates);
+    if ranked.is_empty() {
+        return Err(anyhow::anyhow!(
+            "no matching YouTube Music result for this track"
+        ));
+    }
+    let mut last_error = String::new();
+    for candidate in ranked.into_iter().take(5) {
+        let watch = format!("https://www.youtube.com/watch?v={}", candidate.video_id);
+        match super::youtube::extract(&Url::parse(&watch)?, client, &crate::Config::default()).await
+        {
+            Ok(mut media) => {
+                media.platform = format!("{} → YT Music", track.source);
+                media.title = format!("{} - {}", track.artist, track.title);
+                media.author = Some(track.artist.clone());
+                media.thumbnail = track.artwork.clone().or(media.thumbnail);
+                media.formats.sort_by_key(|format| {
+                    std::cmp::Reverse(format.bitrate.unwrap_or(format.quality()))
+                });
+                return Ok(media);
+            }
+            Err(error) => last_error = error.to_string(),
+        }
+    }
+    Err(anyhow::anyhow!(
+        "all matching YouTube results failed: {last_error}"
+    ))
 }
 
 pub fn nearest_images(media: &Media, artwork: Option<&str>) -> Option<String> {
@@ -482,5 +502,34 @@ mod tests {
         assert_eq!(parsed.artist.as_deref(), Some("Rick Astley"));
         assert_eq!(parsed.album.as_deref(), Some("Whenever You Need Somebody"));
         assert_eq!(parsed.artwork.as_deref(), Some("https://cover.jpg"));
+    }
+
+    #[test]
+    fn ranks_candidates_before_trying_them() {
+        let track = TrackMetadata {
+            title: "Song".into(),
+            artist: "Artist".into(),
+            album: String::new(),
+            year: None,
+            track: None,
+            duration: Some(180.0),
+            artwork: None,
+            source: "Spotify".into(),
+        };
+        let candidates = vec![
+            Candidate {
+                video_id: "cover".into(),
+                title: "Song cover".into(),
+                duration: Some(200.0),
+            },
+            Candidate {
+                video_id: "official".into(),
+                title: "Artist - Song (Official Audio)".into(),
+                duration: Some(181.0),
+            },
+        ];
+        let ranked = rank_candidates(&track, &candidates);
+        assert_eq!(ranked[0].video_id, "official");
+        assert_eq!(ranked[1].video_id, "cover");
     }
 }

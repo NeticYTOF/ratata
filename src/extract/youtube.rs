@@ -35,7 +35,6 @@ pub async fn extract(url: &Url, client: &Client, _config: &Config) -> Result<Med
         ),
         ("MWEB", "2.20250101.00.00", None, "Mobile web"),
         ("ANDROID_VR", "1.60.19", None, "Android VR"),
-        ("TVHTML5_SIMPLY_EMBEDDED_PLAYER", "2.0", None, "TV embedded"),
     ];
     let mut last_status = String::new();
     for (name, version, sdk, label) in clients {

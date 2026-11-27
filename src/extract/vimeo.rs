@@ -60,15 +60,21 @@ fn parse_config(json: &Value, url: &Url, id: &str) -> Option<Media> {
     }
     for (key, label, suffix) in [("hls", "HLS", ".m3u8"), ("dash", "DASH", ".mpd")] {
         let section = &json["request"]["files"][key];
-        let address = find_manifest_url(section, suffix).or_else(|| {
-            section["cdn_url"]
-                .as_str()
-                .or_else(|| section["url"].as_str())
-                .map(str::to_owned)
-        });
-        if let Some(address) = address {
-            let mut format =
-                MediaFormat::new(label.to_ascii_lowercase(), address, MediaKind::Video);
+        let mut addresses = find_manifest_urls(section, suffix);
+        if let Some(fallback) = section["cdn_url"]
+            .as_str()
+            .or_else(|| section["url"].as_str())
+        {
+            addresses.push(fallback.to_owned());
+        }
+        addresses.sort();
+        addresses.dedup();
+        for (index, address) in addresses.into_iter().enumerate() {
+            let mut format = MediaFormat::new(
+                format!("{}{}", label.to_ascii_lowercase(), index),
+                address,
+                MediaKind::Video,
+            );
             format.manifest = Some(if key == "hls" {
                 ManifestKind::Hls
             } else {
@@ -97,17 +103,25 @@ fn add_vimeo_headers(format: &mut MediaFormat) {
     ));
 }
 
-fn find_manifest_url(value: &Value, suffix: &str) -> Option<String> {
+fn find_manifest_urls(value: &Value, suffix: &str) -> Vec<String> {
+    let mut found = Vec::new();
     match value {
-        Value::String(raw) if raw.contains(suffix) => Some(raw.clone()),
-        Value::Object(map) => map
-            .values()
-            .find_map(|nested| find_manifest_url(nested, suffix)),
-        Value::Array(items) => items
-            .iter()
-            .find_map(|nested| find_manifest_url(nested, suffix)),
-        _ => None,
+        Value::String(raw) if raw.contains(suffix) => found.push(raw.clone()),
+        Value::Object(map) => {
+            for nested in map.values() {
+                found.extend(find_manifest_urls(nested, suffix));
+            }
+        }
+        Value::Array(items) => {
+            for nested in items {
+                found.extend(find_manifest_urls(nested, suffix));
+            }
+        }
+        _ => {}
     }
+    found.sort();
+    found.dedup();
+    found
 }
 
 #[cfg(test)]

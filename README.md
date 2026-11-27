@@ -46,6 +46,9 @@ Open Graph or JSON-LD media. Private posts need a Netscape cookie file:
 `ratata URL --cookies cookies.txt`.
 
 Reddit blocks many datacenter IPs; Ratata tries `www`, `api`, and `old` endpoints.
+Some sites (notably Reddit and sometimes Bilibili, Vimeo or SoundCloud) block
+datacenter IPs with HTTP 403/412 even when the same link works at home. Ratata
+reports the real error and suggests cookies when that happens.
 
 ## Config
 
