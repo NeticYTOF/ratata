@@ -90,7 +90,8 @@ fn parse(json: &Value, url: &Url, id: &str) -> Option<Media> {
                 };
                 let mut format = MediaFormat::new(quality, address, MediaKind::Video);
                 format.label = Some(quality.clone());
-                if address.ends_with(".m3u8") {
+                let mime = entry["type"].as_str().unwrap_or("");
+                if address.contains(".m3u8") || mime.contains("mpegURL") {
                     format.manifest = Some(ManifestKind::Hls);
                 }
                 media.add(format);
@@ -146,5 +147,16 @@ mod tests {
                 .iter()
                 .any(|f| f.manifest == Some(ManifestKind::Hls))
         );
+    }
+
+    #[test]
+    fn detects_hls_without_m3u8_suffix() {
+        let json: Value = serde_json::from_str(
+            r#"{"title":"Clip","qualities":{"auto":[{"url":"https://proxy/master","type":"application/x-mpegURL"}]}}"#,
+        )
+        .unwrap();
+        let url = Url::parse("https://www.dailymotion.com/video/x2jvvep").unwrap();
+        let media = parse(&json, &url, "x2jvvep").unwrap();
+        assert_eq!(media.formats[0].manifest, Some(ManifestKind::Hls));
     }
 }

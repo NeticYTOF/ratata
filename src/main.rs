@@ -247,34 +247,16 @@ async fn run() -> Result<()> {
                 };
                 sources.push((media, Some(meta)));
             }
-        } else if parsed
-            .host_str()
-            .is_some_and(|host| host.contains("soundcloud.com"))
-        {
-            match extract::extract(url, &client, &config).await {
-                Ok(media) => sources.push((media, None)),
-                Err(_) => {
-                    println!("  · SoundCloud stream unavailable; matching track on YouTube Music");
-                    let track =
-                        extract::music::soundcloud_fallback_metadata(&parsed, &client).await?;
-                    let media = extract::music::match_on_youtube(&track, &client).await?;
-                    sources.push((
-                        media,
-                        Some(AudioMeta {
-                            title: track.title.clone(),
-                            artist: track.artist.clone(),
-                            artwork: track.artwork.clone(),
-                            ..AudioMeta::default()
-                        }),
-                    ));
-                }
-            }
         } else {
             let media = extract::extract(url, &client, &config).await?;
             sources.push((media, None));
         }
 
         for (media, meta) in sources {
+            let mut media = media;
+            if mp3_mode && meta.is_none() {
+                media.title = clean_music_title(&media.title);
+            }
             if cli.list_formats {
                 print_media(&media);
                 continue;

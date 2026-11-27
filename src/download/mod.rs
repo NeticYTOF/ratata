@@ -171,13 +171,28 @@ impl DownloadManager {
             progress::ProgressTracker::new(self.tx.clone(), job.id, job.media.title.clone(), total);
         let reporter = tracker.spawn();
         tracker.set_state(JobState::Running);
-        let result =
-            match tokio::time::timeout(Duration::from_secs(120), self.fetch_job(&job, &tracker))
-                .await
-            {
-                Ok(result) => result,
-                Err(_) => Err(anyhow::anyhow!("download timed out after 120 seconds")),
-            };
+        let fetch = self.fetch_job(&job, &tracker);
+        tokio::pin!(fetch);
+        let mut tick = tokio::time::interval(Duration::from_secs(1));
+        let mut last_bytes = 0u64;
+        let mut stalled = 0u32;
+        let result = loop {
+            tokio::select! {
+                result = &mut fetch => break result,
+                _ = tick.tick() => {
+                    let now_bytes = tracker.downloaded();
+                    if now_bytes > last_bytes {
+                        last_bytes = now_bytes;
+                        stalled = 0;
+                    } else {
+                        stalled += 1;
+                        if stalled >= 20 {
+                            break Err(anyhow::anyhow!("no download progress for 20 seconds"));
+                        }
+                    }
+                }
+            }
+        };
         let elapsed = started.elapsed().as_secs_f64().max(0.1);
         let measured = (tracker.downloaded() as f64 / elapsed) as u64;
         let previous = self.average_speed.load(Ordering::Relaxed);

@@ -26,6 +26,15 @@ pub async fn extract(url: &Url, client: &Client) -> Result<Media> {
                 return resolve_streams(client, media, &headers).await;
             }
         }
+        let resolve_json =
+            format!("https://api-v2.soundcloud.com/resolve.json?url={encoded}&client_id={id}");
+        if let Ok(info) = crate::http::get_json(client, &resolve_json, &headers).await {
+            let mut item = info.clone();
+            item["hydratable"] = serde_json::json!("track");
+            if let Some(media) = parse_hydration(&Value::Array(vec![item]), url, Some(id)) {
+                return resolve_streams(client, media, &headers).await;
+            }
+        }
     }
 
     let hydration = Regex::new(r"(?s)window\.__sc_hydration\s*=\s*(\[.*?\])")
@@ -55,7 +64,8 @@ pub async fn extract(url: &Url, client: &Client) -> Result<Media> {
 fn find_client_id(page: &str) -> Option<String> {
     for pattern in [
         r#""client_id":"([^"]+)""#,
-        r#"client_id:"([0-9a-zA-Z]{20,})""#,
+        r#"client_id\s*:\s*['"]([0-9a-zA-Z]{20,})['"]"#,
+        r#"client_id\s*=\s*['"]([0-9a-zA-Z]{20,})['"]"#,
         r#"client_id=([a-zA-Z0-9]{20,})"#,
     ] {
         if let Some(capture) = Regex::new(pattern).ok()?.captures(page) {
@@ -75,7 +85,7 @@ async fn discover_client_id(client: &Client) -> Option<String> {
     }
     let document = scraper::Html::parse_document(&home);
     let selector = scraper::Selector::parse("script[src]").ok()?;
-    for element in document.select(&selector).take(8) {
+    for element in document.select(&selector).take(20) {
         let Some(src) = element.value().attr("src") else {
             continue;
         };
