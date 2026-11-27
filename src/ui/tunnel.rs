@@ -82,6 +82,31 @@ pub fn draw(buf: &mut Buffer, area: Rect, palette: &Palette, tick: u64, energy: 
             cell.set_style(Style::default().fg(palette.bloom));
         }
     }
+
+    // Petals drifting through the tunnel add a second, slower animation phase.
+    for seed in 0..18u64 {
+        let speed = 1 + (seed % 3);
+        let x = area.x as i32 + ((seed * 37 + tick * speed) % area.width as u64) as i32;
+        let y = area.y as i32 + ((seed * 23 + tick * (speed + 1)) % area.height as u64) as i32;
+        if inside(area, x, y) {
+            let cell = &mut buf[(x as u16, y as u16)];
+            cell.set_char(if seed % 3 == 0 { '✧' } else { '·' });
+            cell.set_style(
+                Style::default().fg(palette.petals[seed as usize % palette.petals.len()]),
+            );
+        }
+    }
+    let breath = 1 + (tick / 8) % 3;
+    for step in 0..12 {
+        let angle = std::f32::consts::TAU * step as f32 / 12.0 + spin as f32 * 0.12;
+        let x = (cx + angle.cos() * breath as f32 * 3.0).round() as i32;
+        let y = (cy + angle.sin() * breath as f32 * 1.6).round() as i32;
+        if inside(area, x, y) {
+            buf[(x as u16, y as u16)]
+                .set_char('✾')
+                .set_style(Style::default().fg(palette.accent));
+        }
+    }
     if inside(area, cx as i32, cy as i32) {
         buf[(cx as u16, cy as u16)]
             .set_char('✽')

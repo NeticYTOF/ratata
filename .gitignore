@@ -2,3 +2,4 @@
 *.part
 *.ratata.json
 .DS_Store
+*.log

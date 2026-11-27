@@ -120,6 +120,7 @@ impl App {
                         total: job.format.size,
                         speed: 0.0,
                         state: JobState::Queued,
+                        error: None,
                     },
                 )
             })
@@ -293,6 +294,27 @@ impl App {
                 job_area.width.saturating_sub(2) as usize,
                 &palette,
             ));
+        }
+        let errors: Vec<&str> = self
+            .progress
+            .values()
+            .filter_map(|p| p.error.as_deref())
+            .collect();
+        if !errors.is_empty() {
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "  ✖ TUNNEL TROUBLE",
+                Style::default().fg(ratatui::style::Color::Red).bold(),
+            )));
+            for error in errors {
+                lines.push(Line::from(Span::styled(
+                    format!(
+                        "  {}",
+                        truncate(error, job_area.width.saturating_sub(4) as usize)
+                    ),
+                    Style::default().fg(ratatui::style::Color::Red),
+                )));
+            }
         }
         frame.render_widget(
             Paragraph::new(lines)

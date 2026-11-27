@@ -225,6 +225,7 @@ pub struct JobProgress {
     pub total: Option<u64>,
     pub speed: f64,
     pub state: JobState,
+    pub error: Option<String>,
 }
 
 impl JobProgress {

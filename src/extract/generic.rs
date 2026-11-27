@@ -23,7 +23,7 @@ pub fn direct(url: &Url) -> Result<Media> {
         .unwrap_or("asset");
     let title = percent_decode(name);
     let kind = kind_for(url.path());
-    let mut format = MediaFormat::new(url.as_str(), url.as_str(), kind);
+    let mut format = MediaFormat::new("direct", url.as_str(), kind);
     if url.path().ends_with(".m3u8") {
         format.manifest = Some(ManifestKind::Hls);
     } else if url.path().ends_with(".mpd") {

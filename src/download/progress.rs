@@ -66,6 +66,7 @@ impl ProgressTracker {
             total: *inner.total.lock(),
             speed,
             state: *inner.state.lock(),
+            error: None,
         });
     }
 

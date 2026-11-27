@@ -11,9 +11,10 @@ Updated: 2026-11-27
 - Adaptive segment sizing from observed throughput EMA; no second copy/assembly pass.
 - Extractors: YouTube (Innertube clients + signature deciphering), Instagram, X/Twitter,
   TikTok, Reddit, Vimeo, generic HTML/direct URLs (og tags, JSON-LD, media elements).
-- Flower-tunnel TUI: animated perspective rings, flowers, theme cycling, live job bars,
-  keyboard controls (q/p/space/j/k/t), plain ANSI progress mode for scripts.
-- More platforms: SoundCloud, Dailymotion, Twitch clips, Streamable, Imgur, Pinterest.
+- Flower-tunnel TUI: perspective rings, flowers, drifting petals, breathing bloom,
+  theme cycling, live job bars, error detail panel, keyboard controls (q/p/space/j/k/t).
+- `--all-formats` downloads every available format as separate suffixed files (galleries).
+- README with install, usage, platform table, speed design, config and dev commands.
 - End-to-end smoke run passed: 3.3 MB segmented local download, SHA-256 identical.
 - Cross-platform: no hardcoded separators, `std::path`, Windows VT enabled via crossterm.
 - Local verification on Windows: `cargo build`, `cargo test --all-targets` (24 passed),
@@ -22,8 +23,6 @@ Updated: 2026-11-27
   (Windows/Linux x86_64 binaries) added under `.github/workflows/`.
 
 ## Left
-- README with install, usage, platform support and configuration reference.
-- TUI polish: more animation phases, error detail panel, multi-file gallery handling.
 - Continuous commit/push and PROGRESS.md updates.
 
 ## Blocked

@@ -30,6 +30,12 @@ struct Cli {
     audio_only: bool,
     #[arg(long, global = true, help = "List formats instead of downloading")]
     list_formats: bool,
+    #[arg(
+        long,
+        global = true,
+        help = "Download every available format (galleries)"
+    )]
+    all_formats: bool,
     #[arg(long, global = true, help = "Overwrite existing files")]
     overwrite: bool,
     #[arg(long, global = true, help = "Verbose diagnostics")]
@@ -105,20 +111,49 @@ async fn main() -> Result<()> {
             }
             let client = http::build_client(&config)?;
             let mut jobs = Vec::new();
-            for (index, url) in urls.iter().enumerate() {
+            let mut next_id = 0usize;
+            for url in urls.iter() {
                 let media = extract::extract(url, &client, &config).await?;
                 if cli.list_formats {
                     print_media(&media);
                     continue;
                 }
-                let format = choose_format(&media, cli.format.as_deref(), cli.audio_only)?;
-                let destination = destination_for(&media, &format, &config, cli.output.as_deref())?;
-                jobs.push(DownloadJob {
-                    id: index,
-                    media,
-                    format,
-                    destination,
-                });
+                let choices: Vec<(MediaFormat, Option<String>)> = if cli.all_formats {
+                    media
+                        .formats
+                        .iter()
+                        .cloned()
+                        .map(|format| {
+                            let suffix = format!(
+                                "{}_{}",
+                                format.kind.label(),
+                                sanitize_filename(&format.id)
+                            );
+                            (format, Some(suffix))
+                        })
+                        .collect()
+                } else {
+                    vec![(
+                        choose_format(&media, cli.format.as_deref(), cli.audio_only)?,
+                        None,
+                    )]
+                };
+                for (format, suffix) in choices {
+                    let destination = destination_for(
+                        &media,
+                        &format,
+                        &config,
+                        cli.output.as_deref(),
+                        suffix.as_deref(),
+                    )?;
+                    jobs.push(DownloadJob {
+                        id: next_id,
+                        media: media.clone(),
+                        format,
+                        destination,
+                    });
+                    next_id += 1;
+                }
             }
             if jobs.is_empty() {
                 return Ok(());
@@ -159,6 +194,7 @@ fn destination_for(
     format: &MediaFormat,
     config: &Config,
     output: Option<&str>,
+    suffix: Option<&str>,
 ) -> Result<PathBuf> {
     let explicit_file = output
         .map(PathBuf::from)
@@ -171,8 +207,9 @@ fn destination_for(
             .unwrap_or(config.output_dir()?);
         std::fs::create_dir_all(&dir)?;
         dir.join(format!(
-            "{}.{}",
+            "{}{}.{}",
             sanitize_filename(&media.title),
+            suffix.map(|s| format!("_{s}")).unwrap_or_default(),
             format.ext
         ))
     };

@@ -110,17 +110,20 @@ impl DownloadManager {
             Err(_) => JobState::Failed,
         });
         reporter.abort();
+        let final_state = match &result {
+            Ok(_) => JobState::Done,
+            Err(_) if self.cancel.load(Ordering::Relaxed) => JobState::Cancelled,
+            Err(_) => JobState::Failed,
+        };
+        let error = result.as_ref().err().map(|e| e.to_string());
         let _ = self.tx.send(JobProgress {
             id: job.id,
             label: job.media.title.clone(),
             downloaded: tracker.downloaded(),
             total,
             speed: 0.0,
-            state: match &result {
-                Ok(_) => JobState::Done,
-                Err(_) if self.cancel.load(Ordering::Relaxed) => JobState::Cancelled,
-                Err(_) => JobState::Failed,
-            },
+            state: final_state,
+            error,
         });
         result
     }
@@ -193,15 +196,17 @@ pub async fn run_plain(jobs: Vec<DownloadJob>, config: &Config, client: Arc<Clie
             let bar = bar(item, 42);
             let speed = human_speed(item.speed);
             let percent = (item.fraction() * 100.0) as u32;
+            let detail = item.error.as_deref().unwrap_or("");
             writeln!(
                 stdout(),
-                " {} {} {:>3}% {} {:>10}  {}",
+                " {} {} {:>3}% {} {:>10}  {} {}",
                 item.state.glyph(),
                 item.label.chars().take(38).collect::<String>(),
                 percent,
                 bar,
                 speed,
-                item.total.map(human_bytes).unwrap_or_else(|| "live".into())
+                item.total.map(human_bytes).unwrap_or_else(|| "live".into()),
+                detail
             )
             .ok();
             execute!(stdout(), ResetColor).ok();
