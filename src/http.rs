@@ -55,6 +55,27 @@ pub fn parse_netscape(raw: &str) -> Vec<(String, String, String, String)> {
         .collect()
 }
 
+/// Normalises CDN URLs seen in site APIs and previously corrupted URLs.
+pub fn normalize_media_url(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if let Some(rest) = trimmed.strip_prefix("https://https//") {
+        return format!("https://{rest}");
+    }
+    if let Some(rest) = trimmed.strip_prefix("http://http//") {
+        return format!("http://{rest}");
+    }
+    if let Some(rest) = trimmed.strip_prefix("https//") {
+        return format!("https://{rest}");
+    }
+    if let Some(rest) = trimmed.strip_prefix("http//") {
+        return format!("http://{rest}");
+    }
+    if let Some(rest) = trimmed.strip_prefix("//") {
+        return format!("https://{rest}");
+    }
+    trimmed.to_owned()
+}
+
 pub fn headers_map(pairs: &[(String, String)]) -> Result<HeaderMap> {
     let mut map = HeaderMap::new();
     for (key, value) in pairs {
@@ -169,5 +190,21 @@ mod tests {
         .unwrap();
         assert_eq!(headers.len(), 2);
         assert!(headers.contains_key(USER_AGENT));
+    }
+
+    #[test]
+    fn normalizes_corrupted_cdn_urls() {
+        assert_eq!(
+            normalize_media_url("https://https//cdn-cf-west.streamable.com/video/a.mp4"),
+            "https://cdn-cf-west.streamable.com/video/a.mp4"
+        );
+        assert_eq!(
+            normalize_media_url("//cdn.example/a.mp4"),
+            "https://cdn.example/a.mp4"
+        );
+        assert_eq!(
+            normalize_media_url("https//cdn.example/a.mp4"),
+            "https://cdn.example/a.mp4"
+        );
     }
 }

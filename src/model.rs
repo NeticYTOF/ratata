@@ -43,7 +43,7 @@ pub struct MediaFormat {
 impl MediaFormat {
     pub fn new(id: impl Into<String>, url: impl Into<String>, kind: MediaKind) -> Self {
         let id = id.into();
-        let url = url.into();
+        let url = crate::http::normalize_media_url(&url.into());
         let ext = guess_ext(&url, kind);
         Self {
             id,

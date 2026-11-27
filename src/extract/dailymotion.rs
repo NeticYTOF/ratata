@@ -141,7 +141,7 @@ mod tests {
     fn parses_quality_variants() {
         let json: Value = serde_json::from_str(
             r#"{
-          "title":"Bloom tunnel","duration":90,"owner":{"screenname":"garden"},
+          "title":"Sample clip","duration":90,"owner":{"screenname":"garden"},
           "qualities":{"1080":[{"url":"https://proxy/high.mp4","type":"video/mp4"}],
                        "720":[{"url":"https://proxy/low.m3u8","type":"application/x-mpegURL"}]}
         }"#,
@@ -149,7 +149,7 @@ mod tests {
         .unwrap();
         let url = Url::parse("https://www.dailymotion.com/video/x123").unwrap();
         let media = parse(&json, &url, "x123").unwrap();
-        assert_eq!(media.title, "Bloom tunnel");
+        assert_eq!(media.title, "Sample clip");
         assert_eq!(media.formats.len(), 2);
         assert!(
             media
