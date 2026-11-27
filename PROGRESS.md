@@ -58,10 +58,13 @@ Caveat: loopback and CDN measurements are noisy; the script uses medians to
 reduce it. aria2c and yt-dlp were not installed, so they were skipped.
 
 ## Left
-- Continuous commit/push and PROGRESS.md updates.
+- External Linux re-test of the fixes listed in `TESTED.md`.
+- GitHub Actions CI/release runs once Actions is enabled for the account.
 
 ## Blocked
-- Nothing.
+- GitHub Actions: `gh workflow run` returns "Actions has been disabled for this user";
+  both workflows are active and push triggers are correct, but runs cannot start.
+- Linux release binary cannot be cross-built here: `x86_64-linux-musl-gcc` is not installed.
 
 ## Working rules
 - Commit and push at least every 30 minutes and after each working feature.
