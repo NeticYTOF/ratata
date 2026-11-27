@@ -57,11 +57,15 @@ fn parse_config(json: &Value, url: &Url, id: &str) -> Option<Media> {
             media.add(format);
         }
     }
-    for (key, label) in [("hls", "HLS"), ("dash", "DASH")] {
-        let cdn = json["request"]["files"][key]["cdn_url"]
-            .as_str()
-            .or_else(|| json["request"]["files"][key]["url"].as_str());
-        if let Some(address) = cdn {
+    for (key, label, suffix) in [("hls", "HLS", ".m3u8"), ("dash", "DASH", ".mpd")] {
+        let section = &json["request"]["files"][key];
+        let address = find_manifest_url(section, suffix).or_else(|| {
+            section["cdn_url"]
+                .as_str()
+                .or_else(|| section["url"].as_str())
+                .map(str::to_owned)
+        });
+        if let Some(address) = address {
             let mut format =
                 MediaFormat::new(label.to_ascii_lowercase(), address, MediaKind::Video);
             format.manifest = Some(if key == "hls" {
@@ -77,6 +81,19 @@ fn parse_config(json: &Value, url: &Url, id: &str) -> Option<Media> {
         None
     } else {
         Some(media)
+    }
+}
+
+fn find_manifest_url(value: &Value, suffix: &str) -> Option<String> {
+    match value {
+        Value::String(raw) if raw.contains(suffix) => Some(raw.clone()),
+        Value::Object(map) => map
+            .values()
+            .find_map(|nested| find_manifest_url(nested, suffix)),
+        Value::Array(items) => items
+            .iter()
+            .find_map(|nested| find_manifest_url(nested, suffix)),
+        _ => None,
     }
 }
 
@@ -98,5 +115,17 @@ mod tests {
         assert_eq!(media.title, "Tunnel");
         assert_eq!(media.formats.len(), 2);
         assert_eq!(media.formats[1].manifest, Some(ManifestKind::Hls));
+    }
+
+    #[test]
+    fn finds_manifest_inside_cdn_map() {
+        let json: Value = serde_json::from_str(r#"{
+          "video":{"title":"Tunnel"},
+          "request":{"files":{"dash":{"cdns":{"akfire":{"avc_url":"https://vod/playlist.mpd?token=1"}}}}}
+        }"#).unwrap();
+        let url = Url::parse("https://vimeo.com/42").unwrap();
+        let media = parse_config(&json, &url, "42").unwrap();
+        assert_eq!(media.formats[0].manifest, Some(ManifestKind::Dash));
+        assert!(media.formats[0].url.contains("playlist.mpd"));
     }
 }

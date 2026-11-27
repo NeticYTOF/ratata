@@ -41,6 +41,9 @@ pub async fn download(
         playlist_url = select_variant(&playlist_url, &master)?;
     }
     let playlist = get_text(&manager.client, &playlist_url, &job.format.headers).await?;
+    if playlist.contains("METHOD=SAMPLE-AES") || playlist.contains("skd://") {
+        bail!("HLS stream is DRM-protected (SAMPLE-AES); cannot download without a license");
+    }
     let (segments, init) = parse_playlist(&playlist_url, &playlist)?;
     if segments.is_empty() {
         bail!("empty HLS playlist");

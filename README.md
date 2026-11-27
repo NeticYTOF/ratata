@@ -1,9 +1,9 @@
-# Ratata ✿
+# Ratata
 
 A fast, Rust-native terminal downloader for video, audio and images from social apps.
 It downloads through many parallel HTTP ranges into a single preallocated file, resumes
-interrupted transfers, retries intelligently, and renders the whole thing as an animated
-flower tunnel in your terminal.
+interrupted transfers, retries intelligently, and shows crisp aligned progress in a
+clean terminal UI.
 
 Repo: https://github.com/NeticYTOF/ratata
 
@@ -24,7 +24,7 @@ macOS builds from source with the same commands.
 ## Use
 
 ```sh
-# Download with the animated flower-tunnel UI
+# Download with the terminal progress UI
 ratata download "https://www.youtube.com/watch?v=..." \
                "https://www.instagram.com/reel/..."
 
@@ -106,12 +106,13 @@ curl (and aria2c/yt-dlp when installed).
 - `q` / `Esc`: cancel and quit
 - `p` / `Space`: pause or resume all downloads
 - `j` / `k` or arrows: select a job
-- `t`: cycle themes (`blossom`, `aurora`, `ember`)
 
-The tunnel runs at 60fps; its speed follows measured throughput and flowers open
-as progress rises. Job bars show speed, ETA and a segment map. Truecolor is used
-when available, with 256-color and `NO_COLOR` fallbacks. The UI enables virtual
-terminal processing on Windows consoles through crossterm and redraws only diffs.
+Rows show platform, title, size, percent, a progress bar, measured speed and ETA.
+Rates are sampled from actual byte deltas; a final summary reports totals and average
+speed. Truecolor is used when available, with 256-color and `NO_COLOR` fallbacks.
+Rendering is diffed, and `--no-tui` gives plain ANSI output for scripts.
+
+![Ratata terminal UI](docs/tui.png)
 
 ## Config
 
