@@ -371,7 +371,7 @@ fn print_banner() {
     if colored {
         ratata::ui::enable_color();
     }
-    for row in ratata::ui::LOGO {
+    for row in ratata::ui::logo() {
         if colored {
             println!("\x1b[36m  {row}\x1b[0m");
         } else {
@@ -519,8 +519,9 @@ mod tests {
 
     #[test]
     fn launch_banner_matches_ui_banner() {
-        assert_eq!(ratata::ui::LOGO.len(), 5);
-        for row in ratata::ui::LOGO {
+        let banner = ratata::ui::logo();
+        assert_eq!(banner.len(), 5);
+        for row in banner {
             assert_eq!(row.chars().count(), 35, "banner row: {row}");
         }
     }

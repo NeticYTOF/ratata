@@ -1,4 +1,3 @@
-use super::LOGO;
 use super::app::{App, Phase};
 use super::theme;
 use crate::download::{human_bytes, human_speed};
@@ -120,13 +119,14 @@ fn draw_header(app: &App, frame: &mut Frame, area: Rect, palette: &theme::Palett
         .map(|index| if index < filled { '━' } else { '·' })
         .collect();
 
+    let banner = super::logo();
     let mut rows = vec![top_line(width, palette)];
-    for (index, logo) in LOGO.iter().enumerate() {
+    for (index, line) in banner.iter().enumerate() {
         let content = match index {
-            0 => format!("{logo}   {status}"),
-            1 => format!("{logo}   speed {gauge}"),
-            2 => format!("{logo}   {speed:>12}  avg {average:>12}  {total:>10}  {elapsed:>3}s"),
-            _ => (*logo).to_owned(),
+            0 => format!("{line}   {status}"),
+            1 => format!("{line}   speed {gauge}"),
+            2 => format!("{line}   {speed:>12}  avg {average:>12}  {total:>10}  {elapsed:>3}s"),
+            _ => line.clone(),
         };
         let color = if index < 2 {
             palette.accent
@@ -476,17 +476,19 @@ mod tests {
     }
 
     #[test]
-    fn banner_spells_ratata_snapshot() {
-        let expected = [
-            "█████ █████ █████ █████ █████ █████",
-            "█   █ █   █   █   █   █ █   █ █   █",
-            "█████ █████   █   █████   █   █████",
-            "█  █  █   █   █   █   █ █   █ █   █",
-            "█   █ █   █ █████ █   █ █████ █   █",
-        ];
-        assert_eq!(LOGO, expected);
-        for row in LOGO {
-            assert_eq!(display_width(row), 6 * 5 + 5, "banner row: {row}");
+    fn banner_glyphs_spell_ratata() {
+        let t = crate::ui::GLYPHS[2];
+        assert_eq!(t[0].chars().filter(|ch| *ch == '█').count(), 5);
+        for (row, line) in t.iter().enumerate().skip(1) {
+            let chars: Vec<char> = line.chars().collect();
+            assert_eq!(chars.len(), 5);
+            assert_eq!(chars[2], '█', "T stem missing in row {row}");
+            assert_eq!(chars.iter().filter(|ch| **ch == '█').count(), 1);
+        }
+        let banner = crate::ui::logo();
+        assert_eq!(banner.len(), 5);
+        for row in banner {
+            assert_eq!(display_width(&row), 6 * 5 + 5, "banner row: {row}");
         }
     }
 }

@@ -2,14 +2,29 @@ pub mod app;
 pub mod render;
 pub mod theme;
 
-/// Five-row block banner used by both the interactive UI and the launch prompt.
-pub const LOGO: [&str; 5] = [
-    "█████ █████ █████ █████ █████ █████",
-    "█   █ █   █   █   █   █ █   █ █   █",
-    "█████ █████   █   █████   █   █████",
-    "█  █  █   █   █   █   █ █   █ █   █",
-    "█   █ █   █ █████ █   █ █████ █   █",
+/// Five-row block glyphs. `█` is an inked cell, space is empty.
+pub const GLYPHS: [[&str; 5]; 3] = [
+    ["████ ", "█   █", "████ ", "█  █ ", "█   █"], // R
+    [" ███ ", "█   █", "█████", "█   █", "█   █"], // A
+    ["█████", "  █  ", "  █  ", "  █  ", "  █  "], // T
 ];
+
+/// Builds the five banner rows for R A T A T A.
+pub fn logo() -> [String; 5] {
+    let letters = [0usize, 1, 2, 1, 2, 1];
+    let mut rows: [String; 5] = Default::default();
+    for row in 0..5 {
+        let mut line = String::new();
+        for (index, letter) in letters.iter().enumerate() {
+            if index > 0 {
+                line.push(' ');
+            }
+            line.push_str(GLYPHS[*letter][row]);
+        }
+        rows[row] = line;
+    }
+    rows
+}
 
 use crate::Config;
 use crate::download::DownloadManager;
