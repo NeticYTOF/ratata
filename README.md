@@ -1,156 +1,73 @@
 # Ratata
 
-A fast, Rust-native terminal downloader for video, audio and images from social apps.
-It downloads through many parallel HTTP ranges into a single preallocated file, resumes
-interrupted transfers, retries intelligently, and shows crisp aligned progress in a
-clean terminal UI.
-
-## Quick start
-
-```sh
-ratata https://www.youtube.com/watch?v=...
-ratata https://www.instagram.com/reel/...
-ratata --help
-```
-
-Paste a link and Ratata saves the best version to your Downloads folder. No flags needed.
-With no arguments in a terminal it asks for a link. Press `q` at any time to stop.
-
-Repo: https://github.com/NeticYTOF/ratata
+Download videos, audio and images from social sites — fast, simple, and native.
+Ratata uses parallel connections, resumes interrupted downloads, and shows a clean
+progress screen. No account or API key needed.
 
 ## Install
 
-Requires Rust stable (1.85+).
+Download a ready-made binary from [Releases](https://github.com/NeticYTOF/ratata/releases)
+(Windows and Linux x86_64), or install from source with Rust:
 
 ```sh
-git clone https://github.com/NeticYTOF/ratata.git
-cd ratata
-cargo build --release
-./target/release/ratata --help
+cargo install --git https://github.com/NeticYTOF/ratata
 ```
-
-Windows and Linux x86_64 release binaries are attached to GitHub releases.
-macOS builds from source with the same commands.
 
 ## Use
 
 ```sh
-# Download with the terminal progress UI
-ratata download "https://www.youtube.com/watch?v=..." \
-               "https://www.instagram.com/reel/..."
+ratata https://www.youtube.com/watch?v=...
+ratata https://www.instagram.com/reel/... "https://vimeo.com/..."
+ratata --mp3 https://soundcloud.com/forss/flickermood
+ratata mp3 "https://open.spotify.com/track/..."
+ratata info https://www.youtube.com/watch?v=...
+```
 
-# Plain progress output (scripts, SSH, no TTY)
-ratata download URL --no-tui
+Paste a link and Ratata saves the best version to your Downloads folder. With no
+arguments in a terminal it asks for a link and whether you want Video or MP3.
 
-# Inspect metadata and available formats
-ratata info URL
-ratata formats URL
+- `--mp3` saves tagged MP3 (192 kbps, ID3 tags and cover art). Needs `ffmpeg`.
+- Spotify and Apple Music links are **not downloaded from those services**. Ratata
+  reads track metadata, finds the matching audio on a public YouTube source, and
+  saves that. Albums/playlists are processed track by track.
+- YouTube Music links prefer the best audio track.
+- `--no-tui` gives plain output for scripts; non-interactive use exits automatically.
+- Press `q` to cancel, `p` to pause, `↑`/`↓` to select. The final summary stays open
+  until you press a key.
 
-# Pick a format or audio only
-ratata download URL --format 18
-ratata download URL --audio-only
-ratata download URL --all-formats
+Run `ratata --help-all` for advanced options (format, cookies, segment counts).
 
-# Control speed
-ratata download URL --segments 12 --retries 6
-ratata download URL -o ~/Videos/my-clip.mp4
-ratata download URL --cookies ~/cookies.txt
+## Supported sites
 
-# Configuration
-ratata config path
+YouTube, YouTube Music, Instagram, X/Twitter, TikTok, Reddit, Vimeo, Dailymotion,
+Streamable, Twitch clips, SoundCloud, Imgur, Pinterest, Bilibili, Kick, Facebook,
+Spotify and Apple Music metadata matching, direct media links and HTML pages with
+Open Graph or JSON-LD media. Private posts need a Netscape cookie file:
+`ratata URL --cookies cookies.txt`.
+
+Reddit blocks many datacenter IPs; Ratata tries `www`, `api`, and `old` endpoints.
+
+## Config
+
+Settings live in your platform config directory (`dirs::config_dir()/ratata/config.toml`):
+
+```sh
 ratata config init
 ratata config show
 ```
 
-Multiple URLs are downloaded concurrently. Existing files are never overwritten;
-`ratata download URL --overwrite` replaces them.
-
-## Supported sources
-
-| Source | Notes |
-| --- | --- |
-| YouTube / youtu.be / Shorts | Innertube player clients, signature deciphering, HLS fallback |
-| Instagram posts, reels, TV | Media API with embed fallback, carousels |
-| X / Twitter | Syndication API with public mirror fallback |
-| TikTok | Page state extraction, image posts |
-| Reddit | `.json` media metadata, galleries |
-| Vimeo | Public player config, progressive/HLS/DASH |
-| Dailymotion | Player metadata, quality variants |
-| SoundCloud | Track transcodings with client-id resolution |
-| Twitch clips | `videoQualities` from clip pages |
-| Streamable | Public video API |
-| Imgur / Pinterest | Embed pages, Open Graph media |
-| Bilibili | Public view + playurl APIs with Referer |
-| Kick | Videos and clips from public API |
-| Facebook | Public video embed playable URLs |
-| Any direct media URL | mp4, webm, mp3, images, m3u8, mpd |
-| Any HTML page | `og:video`, `og:image`, JSON-LD, `<video>`, `<source>`, `<img>` |
-
-Extraction depends on what each site serves publicly without login. Export a Netscape
-cookie file from your browser and pass `--cookies FILE` for private media; cookies are
-sent only to their matching domains.
-
-## Speed design
-
-- HEAD/range probe discovers size and byte-range support before downloading.
-- The download file is preallocated once; each segment has its own handle and writes
-  at a fixed offset. There is no second assembly copy.
-- Segment count adapts to file size and an exponential moving average of measured
-  throughput; `--segments` caps it.
-- Retries use exponential backoff with jitter. A failed range resumes from the last
-  confirmed byte, and state is persisted next to the output as `*.ratata.json`.
-- Connection pooling and keep-alive are enabled for all hosts.
-- HLS and DASH manifests choose the highest-bandwidth variant and fetch segments in
-  parallel; AES-128 HLS keys and fMP4 init segments are handled. TS playlists are
-  remuxed to MP4 when `ffmpeg` is on PATH.
-
-```sh
-python scripts/bench.py --ratata target/release/ratata.exe --repeat 3 --remote
-```
-
-The benchmark serves a 128 MiB Range-capable payload locally, verifies every
-download byte-for-byte, and reports median MB/s for several segment counts plus
-curl (and aria2c/yt-dlp when installed).
-
-## Terminal UI
-
-- `q` / `Esc`: cancel and quit
-- `p` / `Space`: pause or resume all downloads
-- `j` / `k` or arrows: select a job
-
-Rows show platform, title, size, percent, a progress bar, measured speed and ETA.
-Rates are sampled from actual byte deltas; a final summary reports totals and average
-speed. Truecolor is used when available, with 256-color and `NO_COLOR` fallbacks.
-Rendering is diffed, and `--no-tui` gives plain ANSI output for scripts.
-
-
-## Config
-
-Config lives in the platform config directory (`dirs::config_dir()/ratata/config.toml`):
-
-```toml
-output_dir = "~/Downloads/Ratata"
-segments = 8
-concurrent_downloads = 3
-retries = 4
-timeout_secs = 30
-min_segment_size = 1048576
-theme = "default"
-tui = true
-overwrite = false
-```
+Defaults: downloads to `~/Downloads/Ratata`, 8 segments, 3 concurrent downloads,
+4 retries. Override with `--output`, `--segments`, `--retries`, `--overwrite`.
 
 ## Development
 
 ```sh
-cargo fmt --all
 cargo test --all-targets
 cargo clippy --all-targets -- -D warnings
-cargo build --release
+python scripts/bench.py --ratata target/release/ratata
 ```
 
-CI runs format, build, test and clippy on Ubuntu and Windows. Release tags build
-Windows and Linux x86_64 binaries.
+CI builds and tests on Windows and Linux once GitHub Actions is enabled.
 
 ## License
 

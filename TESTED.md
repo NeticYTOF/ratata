@@ -40,3 +40,18 @@ Build and tests passed (36 unit + 2 integration). Reported failures and current 
 | Reddit | broken from datacenter IP | https://www.reddit.com/r/videos/comments/8l0bfp/ | Expected 403; no action beyond www/api/old fallbacks. |
 | Imgur / Pinterest | fixed, awaiting retest | gallery / pin from Linux run | Pinterest thumbnail sizes are upgraded to `/originals/`; Imgur uses embed media URLs. |
 | UI leftovers | fixed | — | Flower glyphs and wording removed from progress and help; summary stays open until a key press on a TTY. |
+
+## External Linux re-test at ca2d55b and fixes in ab70ed3
+
+| Platform | Status | URL tested | Result |
+| --- | --- | --- | --- |
+| Streamable | works live | https://streamable.com/moo | 2.9 MiB MP4 saved after normalising `https//` CDN URLs. |
+| Facebook | works live | https://www.facebook.com/facebook/videos/10153231379946729/ | 1.1 MiB MP4 saved after escaped playable-URL parsing. |
+| Vimeo | fixed, awaiting retest | https://vimeo.com/76979871 | Bounded playlist fetches and socket stalls; combined underlying errors are now printed after all format attempts fail. |
+| TikTok | fixed, awaiting retest | https://www.tiktok.com/@scout2015/video/6718335390845095173 | Header values are sanitised (unit test added); CDN falls back across all available play URLs on 401/403. |
+| SoundCloud | fixed, awaiting retest | https://soundcloud.com/forss/flickermood | Client id now also discovered from homepage JS bundles. |
+| Bilibili | fixed, awaiting retest | https://www.bilibili.com/video/BV1GJ411x7h7 | Fresh buvid3/buvid4 cookies, browser headers and `__playinfo__` fallback. |
+| Dailymotion | fixed, awaiting retest | https://www.dailymotion.com/video/x2jvvep | Player metadata with exact Referer plus escaped-URL embed fallback. |
+| YouTube Music | added, awaiting live test | https://music.youtube.com/watch?v=... | Audio preferred; metadata uses YouTube video details. |
+| Spotify / Apple Music | added, awaiting live test | open.spotify.com / music.apple.com links | Metadata resolved without login, matched to public YouTube audio with score-based matching. UI/README disclose the public source. |
+| MP3 mode | added, awaiting live test | any URL with `--mp3` | ffmpeg-based 192 kbps MP3 with ID3 tags and optional cover art; friendly error when ffmpeg is absent. |

@@ -268,6 +268,9 @@ async fn run() -> Result<()> {
     let jobs: Vec<DownloadJob> = prepared.into_iter().map(|(job, _)| job).collect();
     let plain_client = client.clone();
     let jobs_to_convert = jobs.clone();
+    if jobs.iter().any(|job| job.media.platform.contains('→')) {
+        println!("  note: audio matched on a public YouTube source, not Spotify/Apple");
+    }
     let client = Arc::new(client);
     if config.tui && !cli.no_tui {
         ratata::ui::run(jobs, config.clone(), client).await?;

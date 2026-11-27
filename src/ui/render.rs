@@ -156,6 +156,15 @@ fn draw_jobs(app: &App, frame: &mut Frame, area: Rect, palette: &theme::Palette)
                 Modifier::empty()
             }),
         )));
+        if job.media.platform.contains('→') {
+            lines.push(Line::from(Span::styled(
+                format!(
+                    "    {} → matched on YouTube Music (audio)",
+                    job.media.platform.split(' ').next().unwrap_or("Music")
+                ),
+                Style::default().fg(palette.muted),
+            )));
+        }
         if let Some(error) = &progress.error {
             lines.push(Line::from(Span::styled(
                 format!("    {error}"),
@@ -232,6 +241,12 @@ fn draw_summary(app: &App, frame: &mut Frame, area: Rect, palette: &theme::Palet
             Style::default().fg(color),
         )));
     }
+    if app.jobs.iter().any(|job| job.media.platform.contains('→')) {
+        lines.push(Line::from(Span::styled(
+            "  audio matched on YouTube Music from a public source, not Spotify/Apple",
+            Style::default().fg(palette.muted),
+        )));
+    }
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
         "  press any key to quit",
@@ -279,6 +294,15 @@ fn draw_footer(frame: &mut Frame, area: Rect, palette: &theme::Palette) {
 }
 
 fn badge(platform: &str) -> &'static str {
+    if platform.contains("Spotify") {
+        return "SP";
+    }
+    if platform.contains("Apple") {
+        return "AM";
+    }
+    if platform.contains("YouTube Music") {
+        return "YM";
+    }
     match platform.to_ascii_lowercase().as_str() {
         "youtube" => "YT",
         "instagram" => "IG",
