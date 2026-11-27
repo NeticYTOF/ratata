@@ -7,8 +7,8 @@ use crate::model::{DownloadJob, JobProgress, JobState, ManifestKind};
 use anyhow::{Result, bail};
 use reqwest::Client;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 use tokio::sync::{Semaphore, mpsc};
 use tokio::task::JoinHandle;
 
@@ -18,6 +18,7 @@ pub struct DownloadManager {
     pub tx: mpsc::UnboundedSender<JobProgress>,
     pub pause: Arc<AtomicBool>,
     pub cancel: Arc<AtomicBool>,
+    pub average_speed: Arc<AtomicU64>,
     global: Arc<Semaphore>,
 }
 
@@ -57,6 +58,7 @@ impl DownloadManager {
             tx: tx.unwrap_or(fallback),
             pause: Arc::new(AtomicBool::new(false)),
             cancel: Arc::new(AtomicBool::new(false)),
+            average_speed: Arc::new(AtomicU64::new(0)),
             global,
         }
     }
@@ -83,6 +85,7 @@ impl DownloadManager {
     }
 
     pub async fn download(&self, job: DownloadJob) -> Result<std::path::PathBuf> {
+        let started = Instant::now();
         let _permit = self.global.acquire().await?;
         let total = job.format.size;
         let tracker =
@@ -94,6 +97,13 @@ impl DownloadManager {
             Some(ManifestKind::Dash) => crate::media::dash::download(self, &job, &tracker).await,
             None => direct::download(self, &job, &tracker).await,
         };
+        let elapsed = started.elapsed().as_secs_f64().max(0.1);
+        let measured = (tracker.downloaded() as f64 / elapsed) as u64;
+        let previous = self.average_speed.load(Ordering::Relaxed);
+        self.average_speed.store(
+            ((previous as f64 * 0.6) + (measured as f64 * 0.4)) as u64,
+            Ordering::Relaxed,
+        );
         tracker.set_state(match &result {
             Ok(_) => JobState::Done,
             Err(_) if self.cancel.load(Ordering::Relaxed) => JobState::Cancelled,

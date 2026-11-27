@@ -1,0 +1,57 @@
+    Checking ratata v0.1.0 (C:\Github Code etc v2\Ratata)
+error[E0425]: cannot find value `total` in this scope
+  --> src\download\mod.rs:90:94
+   |
+90 |             progress::ProgressTracker::new(self.tx.clone(), job.id, job.media.title.clone(), total);
+   |                                                                                              ^^^^^ not found in this scope
+
+error[E0425]: cannot find value `total` in this scope
+   --> src\download\mod.rs:115:13
+    |
+115 |             total,
+    |             ^^^^^ not found in this scope
+
+warning: unused import: `direct`
+ --> src\download\segment.rs:2:30
+  |
+2 | use super::{DownloadManager, direct};
+  |                              ^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+error[E0308]: `?` operator has incompatible types
+   --> src\download\direct.rs:281:8
+    |
+281 |     Ok(std::fs::File::open(path)?)
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `tokio::fs::File`, found `std::fs::File`
+    |
+    = note: `?` operator cannot convert from `std::fs::File` to `tokio::fs::File`
+    = note: `std::fs::File` and `tokio::fs::File` have similar names, but are actually distinct types
+note: `std::fs::File` is defined in crate `std`
+   --> C:\Users\aarav\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library\std\src\fs.rs:134:1
+    |
+134 | pub struct File {
+    | ^^^^^^^^^^^^^^^
+note: `tokio::fs::File` is defined in crate `tokio`
+   --> C:\Users\aarav\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tokio-1.54.1\src\fs\file.rs:95:1
+    |
+ 95 | pub struct File {
+    | ^^^^^^^^^^^^^^^
+help: call `Into::into` on this expression to convert `std::fs::File` into `tokio::fs::File`
+    |
+281 |     Ok(std::fs::File::open(path)?.into())
+    |                                  +++++++
+
+error[E0063]: missing field `pause` in initializer of `DownloadManager`
+  --> src\download\mod.rs:55:9
+   |
+55 |         Self {
+   |         ^^^^ missing `pause`
+
+Some errors have detailed explanations: E0063, E0308, E0425.
+For more information about an error, try `rustc --explain E0063`.
+warning: `ratata` (lib) generated 1 warning
+error: could not compile `ratata` (lib) due to 4 previous errors; 1 warning emitted
+warning: build failed, waiting for other jobs to finish...
+warning: `ratata` (lib test) generated 1 warning (1 duplicate)
+error: could not compile `ratata` (lib test) due to 4 previous errors; 1 warning emitted

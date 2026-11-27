@@ -23,17 +23,19 @@ pub async fn extract(url: &Url, client: &Client) -> Result<Media> {
         .and_then(|r| r.captures(&page))
         .and_then(|c| serde_json::from_str::<Value>(&c[1]).ok());
     if let Some(state) = hydration
-        && let Some(mut media) = parse_hydration(&state, url, client_id.as_deref()) {
-            let headers = browser_headers("https://soundcloud.com/");
-            for format in &mut media.formats {
-                if format.url.contains("api-v2.soundcloud.com")
-                    && let Ok(stream) = crate::http::get_json(client, &format.url, &headers).await
-                        && let Some(address) = stream["url"].as_str() {
-                            format.url = address.to_owned();
-                        }
+        && let Some(mut media) = parse_hydration(&state, url, client_id.as_deref())
+    {
+        let headers = browser_headers("https://soundcloud.com/");
+        for format in &mut media.formats {
+            if format.url.contains("api-v2.soundcloud.com")
+                && let Ok(stream) = crate::http::get_json(client, &format.url, &headers).await
+                && let Some(address) = stream["url"].as_str()
+            {
+                format.url = address.to_owned();
             }
-            return Ok(media);
         }
+        return Ok(media);
+    }
     // Some tracks expose a direct audio URL in Open Graph metadata.
     let document = scraper::Html::parse_document(&page);
     let selector =

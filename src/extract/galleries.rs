@@ -70,16 +70,16 @@ fn parse(html: &str, url: &Url, platform: &str, fallback_title: &str) -> Result<
                     && (value.contains("imgur")
                         || value.contains("pinimg")
                         || value.ends_with(".mp4"))
-                    {
-                        add(
-                            value.to_owned(),
-                            if value.ends_with(".mp4") {
-                                MediaKind::Video
-                            } else {
-                                MediaKind::Image
-                            },
-                        );
-                    }
+                {
+                    add(
+                        value.to_owned(),
+                        if value.ends_with(".mp4") {
+                            MediaKind::Video
+                        } else {
+                            MediaKind::Image
+                        },
+                    );
+                }
             }
         }
     }

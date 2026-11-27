@@ -1,5 +1,5 @@
+use super::DownloadManager;
 use super::progress::ProgressTracker;
-use super::{DownloadManager, direct};
 use crate::download::state::SegmentState;
 use crate::http::headers_map;
 use crate::model::DownloadJob;
@@ -16,17 +16,10 @@ pub async fn run(
     job: &DownloadJob,
     segment: &SegmentState,
     tracker: &ProgressTracker,
-    path: &Path,
+    part: &Path,
 ) -> Result<()> {
-    direct::ensure_parent(path)?;
     let expected = segment.end - segment.start + 1;
-    let mut done = tokio::fs::metadata(path)
-        .await
-        .map(|m| m.len())
-        .unwrap_or(0);
-    if done > expected {
-        done = 0;
-    }
+    let mut done = segment.done.min(expected);
     let headers = headers_map(&job.format.headers)?;
 
     for attempt in 0..=manager.config.retries {
@@ -63,18 +56,11 @@ pub async fn run(
         if partial && segment.start > 0 {
             bail!("server ignored byte ranges");
         }
-        let file = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(offset == segment.start)
-            .open(path)
-            .await?;
+        // A separate handle per segment lets all ranges write concurrently at fixed offsets.
+        let file = OpenOptions::new().write(true).open(part).await?;
         let mut writer = BufWriter::with_capacity(256 * 1024, file);
-        if offset > segment.start {
-            writer.seek(std::io::SeekFrom::Start(done)).await?;
-        }
+        writer.seek(std::io::SeekFrom::Start(offset)).await?;
         let mut stream = response.bytes_stream();
-        let mut chunk_start = if partial { 0 } else { done };
         let mut failed = false;
         while let Some(chunk) = stream.next().await {
             manager.gate().await?;
@@ -85,19 +71,18 @@ pub async fn run(
                     break;
                 }
             };
-            if partial && chunk_start + chunk.len() as u64 > expected {
-                let keep = (expected - chunk_start) as usize;
+            if partial && done + chunk.len() as u64 > expected {
+                let keep = (expected - done) as usize;
                 writer.write_all(&chunk[..keep]).await?;
                 tracker.add(keep as u64);
-                chunk_start += keep as u64;
+                done += keep as u64;
                 break;
             }
             writer.write_all(&chunk).await?;
             tracker.add(chunk.len() as u64);
-            chunk_start += chunk.len() as u64;
+            done += chunk.len() as u64;
         }
         writer.flush().await?;
-        done = chunk_start;
         if done >= expected {
             return Ok(());
         }
@@ -110,9 +95,8 @@ pub async fn run(
             );
         }
         backoff(attempt).await;
-        if failed {
-            // The partially written bytes are kept; the next attempt resumes at `done`.
-            continue;
+        if !failed {
+            done = done.min(expected);
         }
     }
     bail!("segment {} exhausted retries", segment.index)

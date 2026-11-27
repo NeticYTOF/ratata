@@ -6,8 +6,9 @@ Updated: 2026-11-27
 - GitHub repo created and pushed: https://github.com/NeticYTOF/ratata
 - Rust CLI foundation: clap commands (`download`, `info`, `formats`, `config`),
   TOML config via the platform `dirs` crate, shared reqwest client, data model.
-- Parallel segmented download engine: HTTP range probing, resumable `.part` files,
-  sidecar state, exponential-backoff retries, pause/cancel gates, live speed tracking.
+- Parallel segmented download engine: HTTP range probing, resumable preallocated `.part`
+  file with concurrent offset writes, sidecar state, retries, pause/cancel, speed tracking.
+- Adaptive segment sizing from observed throughput EMA; no second copy/assembly pass.
 - Extractors: YouTube (Innertube clients + signature deciphering), Instagram, X/Twitter,
   TikTok, Reddit, Vimeo, generic HTML/direct URLs (og tags, JSON-LD, media elements).
 - Flower-tunnel TUI: animated perspective rings, flowers, theme cycling, live job bars,
@@ -22,7 +23,6 @@ Updated: 2026-11-27
 
 ## Left
 - README with install, usage, platform support and configuration reference.
-- Speed work: adaptive segment sizing, persistent connection warm-up, streaming assembly.
 - TUI polish: more animation phases, error detail panel, multi-file gallery handling.
 - Continuous commit/push and PROGRESS.md updates.
 

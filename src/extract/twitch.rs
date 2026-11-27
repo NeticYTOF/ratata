@@ -18,10 +18,11 @@ pub async fn extract(url: &Url, client: &Client) -> Result<Media> {
         .next()
         .map(|e| e.text().collect::<String>())
         && let Ok(state) = serde_json::from_str::<Value>(&raw)
-            && let Some(clip) = find_clip(&state)
-                && let Some(media) = parse_clip(clip, url, &slug) {
-                    return Ok(media);
-                }
+        && let Some(clip) = find_clip(&state)
+        && let Some(media) = parse_clip(clip, url, &slug)
+    {
+        return Ok(media);
+    }
     let embed = format!("https://clips.twitch.tv/embed?clip={slug}");
     let html = get_text(client, &embed, &headers).await.unwrap_or_default();
     let document = Html::parse_document(&html);
@@ -51,9 +52,10 @@ fn clip_slug(url: &Url) -> Result<String> {
             .ok_or_else(|| RatataError::UnsupportedUrl(url.to_string()).into());
     }
     if let Some(index) = segments.iter().position(|s| *s == "clip")
-        && let Some(slug) = segments.get(index + 1) {
-            return Ok((*slug).to_owned());
-        }
+        && let Some(slug) = segments.get(index + 1)
+    {
+        return Ok((*slug).to_owned());
+    }
     Err(RatataError::UnsupportedUrl(url.to_string()).into())
 }
 
