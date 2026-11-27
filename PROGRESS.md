@@ -22,11 +22,11 @@ Updated: 2026-11-27
 - `--all-formats` downloads every available format as separate suffixed files (galleries).
 - `--cookies FILE` loads a Netscape cookie jar into a domain-scoped reqwest jar.
 - Integration tests cover byte-exact segmented download and resume from persisted state (2 tests).
-- Test suite: 36 unit tests + 2 integration tests, including a TUI buffer-render smoke test.
-- Local verification on Windows: `cargo build`, `cargo test --all-targets` (38 passed),
-  `cargo clippy --all-targets -- -D warnings`, `cargo fmt --all` applied cleanly.
-- CI workflow (fmt/build/test/clippy on Ubuntu + Windows) and release workflow
-  (Windows/Linux x86_64 binaries) added under `.github/workflows/`.
+- Test suite: 49 offline tests pass (46 library, 1 binary, 2 integration).
+- Local verification on Windows: `cargo build`, `cargo test --all-targets`,
+  `cargo clippy --all-targets -- -D warnings`, `cargo fmt --all -- --check`.
+- v0.1.0 released at https://github.com/NeticYTOF/ratata/releases/tag/v0.1.0 with
+  Windows x86_64 zip, Linux x86_64 tar.gz and SHA256SUMS.
 
 ## Speed benchmarks (`scripts/bench.py`, Windows, release build)
 
@@ -62,9 +62,10 @@ reduce it. aria2c and yt-dlp were not installed, so they were skipped.
 - GitHub Actions CI/release runs once Actions is enabled for the account.
 
 ## Blocked
-- GitHub Actions: `gh workflow run` returns "Actions has been disabled for this user";
-  both workflows are active and push triggers are correct, but runs cannot start.
-- Linux release binary cannot be cross-built here: `x86_64-linux-musl-gcc` is not installed.
+- GitHub Actions: `gh workflow run` returned "Actions has been disabled for this user";
+  workflows remain in the repo and will run once Actions is enabled.
+- Datacenter-IP blocks documented in `TESTED.md`: Reddit (403), Bilibili (412),
+  Vimeo (CDN no progress), SoundCloud (no playable transcoding), Dailymotion CDN (403).
 
 ## Working rules
 - Commit and push at least every 30 minutes and after each working feature.

@@ -55,3 +55,17 @@ Build and tests passed (36 unit + 2 integration). Reported failures and current 
 | YouTube Music | added, awaiting live test | https://music.youtube.com/watch?v=... | Audio preferred; metadata uses YouTube video details. |
 | Spotify / Apple Music | added, awaiting live test | open.spotify.com / music.apple.com links | Metadata resolved without login, matched to public YouTube audio with score-based matching. UI/README disclose the public source. |
 | MP3 mode | added, awaiting live test | any URL with `--mp3` | ffmpeg-based 192 kbps MP3 with ID3 tags and optional cover art; friendly error when ffmpeg is absent. |
+
+## Final status before v0.1.0 (Linux re-tests at 0e0cbcb / e420812 / 686404d)
+
+| Item | Status | Notes |
+| --- | --- | --- |
+| Spotify / Apple Music to MP3 | works live | Metadata resolved, matched on public YouTube source, clean title, cover art and known tags written. |
+| YouTube Music to MP3 | works live | Audio selected and converted; no invented album/year/track tags. |
+| TikTok | works live | Valid MP4 after fresh cookie jar, Referer/UA and alternate play URLs. |
+| Dailymotion | partial | HLS variant is now routed through the playlist downloader with browser headers, but `cdndirector` returns 403 from the datacenter IP. |
+| Vimeo | blocked from datacenter IP | Player config is read and all CDN variants are tried; `vod-adaptive-ak.vimeocdn.com` sends no bytes. Ratata now reports a 20-second stall with the URL. |
+| SoundCloud | blocked from datacenter IP | SoundCloud-only client-id/resolve path retained; API does not yield a playable transcoding from this IP. No YouTube fallback is used. |
+| Bilibili | blocked from datacenter IP | Full browser headers, buvid3/buvid4 from `finger/spi`, page priming and `__playinfo__` fallback still receive HTTP 412. |
+| Reddit | blocked from datacenter IP | Expected 403; fallbacks retained. |
+| TUI | verified offline | Rendering tests at 110 and 80 columns; summary stays open on TTY and non-TTY exits normally. |
