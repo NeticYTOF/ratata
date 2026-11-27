@@ -105,14 +105,20 @@ async fn spotify_metadata(url: &Url, client: &Client) -> Result<Vec<TrackMetadat
         .await
         {
             let parsed = parse_spotify_embed(&page);
-            if parsed.artist.is_some() {
-                artist = parsed.artist.unwrap_or_default();
+            if let Some(value) = &parsed.artist {
+                artist = value.clone();
+            } else if let Some(description) = &parsed.description {
+                let (song, by) = split_title_artist(description, &artist);
+                if by != artist {
+                    artist = by;
+                    title = song;
+                }
             }
-            if parsed.album.is_some() {
-                album = parsed.album.unwrap_or_default();
+            if let Some(value) = &parsed.album {
+                album = value.clone();
             }
-            if parsed.title.is_some() {
-                title = parsed.title.unwrap_or_default();
+            if let Some(value) = &parsed.title {
+                title = value.clone();
             }
             artwork = parsed.artwork.or(artwork);
         }
@@ -135,6 +141,7 @@ struct SpotifyEmbed {
     title: Option<String>,
     artist: Option<String>,
     album: Option<String>,
+    description: Option<String>,
     artwork: Option<String>,
 }
 
@@ -156,10 +163,14 @@ fn parse_spotify_embed(html: &str) -> SpotifyEmbed {
             .and_then(|c| c.get(1))
             .map(|m| m.as_str().trim().to_owned())
     };
+    let artist = capture(r#""artist":"([^"]+)""#)
+        .or_else(|| capture(r#""artists".{0,80}?"name":"([^"]+)""#))
+        .or_else(|| anchored("artist"));
     SpotifyEmbed {
         title: capture(r#"<meta property="og:title" content="([^"]+)""#),
-        artist: anchored("artist"),
-        album: anchored("album"),
+        artist,
+        album: capture(r#""album":"([^"]+)""#).or_else(|| anchored("album")),
+        description: capture(r#"<meta property="og:description" content="([^"]+)""#),
         artwork: capture(r#"<meta property="og:image" content="([^"]+)""#),
     }
 }

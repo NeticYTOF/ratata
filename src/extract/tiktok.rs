@@ -33,6 +33,35 @@ pub async fn extract(url: &Url, client: &Client) -> Result<Media> {
             return Ok(parsed);
         }
     }
+    let mirror = format!(
+        "https://www.tikwm.com/api/?url={}&hd=1",
+        urlencoding(url.as_str())
+    );
+    if let Ok(json) = crate::http::get_json(client, &mirror, &headers).await
+        && json["code"].as_i64() == Some(0)
+    {
+        let data = &json["data"];
+        let title = data["title"].as_str().unwrap_or("TikTok").to_owned();
+        let author = data["author"]["unique_id"]
+            .as_str()
+            .or_else(|| data["unique_id"].as_str())
+            .unwrap_or("");
+        let mut media = Media::new("TikTok", url.to_string(), title);
+        media.author = if author.is_empty() {
+            None
+        } else {
+            Some(author.to_owned())
+        };
+        for key in ["play", "hdplay", "download", "wmplay"] {
+            if let Some(address) = data[key].as_str() {
+                add_format(&mut media, address, None);
+            }
+        }
+        media.thumbnail = data["cover"].as_str().map(str::to_owned);
+        if !media.formats.is_empty() {
+            return Ok(media);
+        }
+    }
     let oembed = format!(
         "https://www.tiktok.com/oembed?url={}",
         urlencoding(url.as_str())

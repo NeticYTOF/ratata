@@ -25,6 +25,7 @@ pub async fn convert_to_mp3(
     input: &Path,
     meta: &AudioMeta,
     ffmpeg: &Path,
+    remove_source: bool,
 ) -> Result<PathBuf> {
     if !input.exists() {
         bail!("audio file is missing: {}", input.display());
@@ -82,6 +83,9 @@ pub async fn convert_to_mp3(
                 .take(400)
                 .collect::<String>()
         );
+    }
+    if remove_source && output != input {
+        let _ = tokio::fs::remove_file(input).await;
     }
     if let Some(cover) = cover {
         let _ = tokio::fs::remove_file(cover).await;

@@ -26,7 +26,8 @@ pub async fn extract(url: &Url, client: &Client) -> Result<Media> {
     headers.push(("Origin".into(), "https://www.bilibili.com".into()));
     headers.push(("Accept".into(), "application/json, text/plain, */*".into()));
     headers.push(("Accept-Language".into(), "zh-CN,zh;q=0.9,en;q=0.8".into()));
-    headers.push(("Cookie".into(), bilibili_cookie()));
+    let cookie = bilibili_cookie(client, &headers).await;
+    headers.push(("Cookie".into(), cookie));
     let view = get_json(
         client,
         &format!("https://api.bilibili.com/x/web-interface/view?bvid={bvid}"),
@@ -76,7 +77,19 @@ async fn parse_page_fallback(
         .ok_or_else(|| RatataError::NoFormats(url.to_string()).into())
 }
 
-fn bilibili_cookie() -> String {
+async fn bilibili_cookie(client: &Client, headers: &[(String, String)]) -> String {
+    let spi = get_json(
+        client,
+        "https://api.bilibili.com/x/frontend/finger/spi",
+        headers,
+    )
+    .await
+    .ok();
+    if let Some(b3) = spi.as_ref().and_then(|json| json["data"]["b_3"].as_str())
+        && let Some(b4) = spi.as_ref().and_then(|json| json["data"]["b_4"].as_str())
+    {
+        return format!("buvid3={b3}; buvid4={b4}; b_nut=1700000000");
+    }
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()

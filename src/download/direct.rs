@@ -289,7 +289,7 @@ async fn stream_single(
     }
     tracker.add(start);
     let mut stream = response.bytes_stream();
-    let stall = std::time::Duration::from_secs(manager.config.timeout_secs.max(1));
+    let stall = std::time::Duration::from_secs(manager.config.timeout_secs.clamp(1, 20));
     loop {
         let next = tokio::time::timeout(stall, stream.next()).await;
         let Some(chunk) = next.map_err(|_| anyhow::anyhow!("download stalled"))? else {

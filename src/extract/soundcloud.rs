@@ -55,6 +55,7 @@ pub async fn extract(url: &Url, client: &Client) -> Result<Media> {
 fn find_client_id(page: &str) -> Option<String> {
     for pattern in [
         r#""client_id":"([^"]+)""#,
+        r#"client_id:"([0-9a-zA-Z]{20,})""#,
         r#"client_id=([a-zA-Z0-9]{20,})"#,
     ] {
         if let Some(capture) = Regex::new(pattern).ok()?.captures(page) {

@@ -26,6 +26,12 @@ pub async fn extract(url: &Url, client: &Client) -> Result<Media> {
     {
         return Ok(media);
     }
+    let alternate = format!("{endpoint}?locale=en-US&client_type=website");
+    if let Ok(json) = get_json(client, &alternate, &headers).await
+        && let Some(media) = parse(&json, url, id)
+    {
+        return Ok(media);
+    }
     let embed = format!("https://www.dailymotion.com/embed/video/{id}");
     let page = get_text(client, &embed, &headers).await.unwrap_or_default();
     let mut media = Media::new("Dailymotion", url.to_string(), id);

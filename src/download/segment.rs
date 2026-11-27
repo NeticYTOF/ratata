@@ -62,7 +62,7 @@ pub async fn run(
         writer.seek(std::io::SeekFrom::Start(offset)).await?;
         let mut stream = response.bytes_stream();
         let mut failed = false;
-        let stall = std::time::Duration::from_secs(manager.config.timeout_secs.max(1));
+        let stall = std::time::Duration::from_secs(manager.config.timeout_secs.clamp(1, 20));
         loop {
             let next = tokio::time::timeout(stall, stream.next()).await;
             let chunk = match next {

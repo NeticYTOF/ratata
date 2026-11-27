@@ -23,16 +23,16 @@ pub fn build_client(config: &Config) -> Result<Client> {
     if let Some(proxy) = &config.proxy {
         builder = builder.proxy(reqwest::Proxy::all(proxy)?);
     }
+    let jar = Arc::new(Jar::default());
     if let Some(path) = &config.cookies {
-        let jar = Arc::new(Jar::default());
         let raw =
             std::fs::read_to_string(path).with_context(|| format!("reading cookies {}", path))?;
         for (domain, cookie_path, name, value) in parse_netscape(&raw) {
             let url = Url::parse(&format!("https://{domain}{cookie_path}"))?;
             jar.add_cookie_str(&format!("{name}={value}"), &url);
         }
-        builder = builder.cookie_provider(jar);
     }
+    builder = builder.cookie_provider(jar);
     Ok(builder.build()?)
 }
 

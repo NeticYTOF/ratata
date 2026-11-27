@@ -204,9 +204,23 @@ async fn run() -> Result<()> {
         let parsed = Url::parse(url)?;
         let mut sources: Vec<(Media, Option<AudioMeta>)> = Vec::new();
         if extract::music::is_spotify(&parsed) || extract::music::is_apple_music(&parsed) {
-            let tracks = extract::music::metadata(&parsed, &client).await?;
+            println!("  · Reading track metadata…");
+            let _ = io::stdout().flush();
+            let tracks = tokio::time::timeout(
+                std::time::Duration::from_secs(20),
+                extract::music::metadata(&parsed, &client),
+            )
+            .await
+            .context("Reading track metadata timed out")??;
             for track in tracks {
-                let media = extract::music::match_on_youtube(&track, &client).await?;
+                println!("  · {} → matched on YouTube Music (audio)", track.source);
+                let _ = io::stdout().flush();
+                let media = tokio::time::timeout(
+                    std::time::Duration::from_secs(30),
+                    extract::music::match_on_youtube(&track, &client),
+                )
+                .await
+                .context("Matching this track on YouTube Music timed out")??;
                 let meta = AudioMeta {
                     title: track.title.clone(),
                     artist: track.artist.clone(),
@@ -297,41 +311,32 @@ async fn run() -> Result<()> {
             if audio_meta.artwork.is_none() {
                 audio_meta.artwork = job.media.thumbnail.clone();
             }
-            let output =
-                audio::convert_to_mp3(&plain_client, &job.destination, &audio_meta, &ffmpeg)
-                    .await?;
+            let output = audio::convert_to_mp3(
+                &plain_client,
+                &job.destination,
+                &audio_meta,
+                &ffmpeg,
+                !cli.keep_source,
+            )
+            .await?;
             println!("  ✓ MP3 saved to {}", output.display());
-            if !cli.keep_source && output != job.destination {
-                let _ = tokio::fs::remove_file(&job.destination).await;
-            }
         }
     }
     Ok(())
 }
 
 fn clean_music_title(title: &str) -> String {
-    let clutter = [
-        "(Official Video)",
-        "(Official Audio)",
-        "(Official Music Video)",
-        "(4K Remaster)",
-        "(HD)",
-        "(HQ)",
-        "(Audio)",
-        "(Lyrics)",
-        "(Lyric Video)",
-        "(Visualizer)",
-    ];
-    let mut cleaned = title.to_owned();
-    for fragment in clutter {
-        cleaned = cleaned.replace(fragment, "");
+    let pattern =
+        r"(?i)\([^)]*(official|remaster|video|audio|lyric|visualizer|hd|hq|4k|live|cover)[^)]*\)";
+    let cleaned = match regex::Regex::new(pattern) {
+        Ok(regex) => regex.replace_all(title, "").into_owned(),
+        Err(_) => title.to_owned(),
+    };
+    let cleaned = cleaned.trim();
+    if let Some((_artist, song)) = cleaned.split_once(" - ") {
+        return song.trim().to_owned();
     }
-    cleaned
-        .split(" - ")
-        .next()
-        .unwrap_or(&cleaned)
-        .trim()
-        .to_owned()
+    cleaned.to_owned()
 }
 
 fn prompt_url() -> Result<String> {
@@ -452,4 +457,20 @@ fn print_media(media: &Media) {
         println!("    {}", format.describe());
     }
     println!();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cleans_music_titles() {
+        assert_eq!(
+            clean_music_title(
+                "Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster)"
+            ),
+            "Never Gonna Give You Up"
+        );
+        assert_eq!(clean_music_title("Song (Official Audio)"), "Song");
+    }
 }
