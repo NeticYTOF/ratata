@@ -69,7 +69,29 @@ async fn discover_client_id(client: &Client) -> Option<String> {
     let home = get_text(client, "https://soundcloud.com/", &headers)
         .await
         .ok()?;
-    find_client_id(&home)
+    if let Some(id) = find_client_id(&home) {
+        return Some(id);
+    }
+    let document = scraper::Html::parse_document(&home);
+    let selector = scraper::Selector::parse("script[src]").ok()?;
+    for element in document.select(&selector).take(8) {
+        let Some(src) = element.value().attr("src") else {
+            continue;
+        };
+        let absolute = if src.starts_with("http") {
+            src.to_owned()
+        } else if src.starts_with("//") {
+            format!("https:{src}")
+        } else {
+            format!("https://soundcloud.com{src}")
+        };
+        if let Ok(script) = get_text(client, &absolute, &headers).await
+            && let Some(id) = find_client_id(&script)
+        {
+            return Some(id);
+        }
+    }
+    None
 }
 
 async fn resolve_streams(

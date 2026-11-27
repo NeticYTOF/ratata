@@ -5,6 +5,7 @@ pub mod galleries;
 pub mod generic;
 pub mod instagram;
 pub mod kick;
+pub mod music;
 pub mod reddit;
 pub mod soundcloud;
 pub mod streamable;

@@ -103,6 +103,11 @@ impl DownloadManager {
             error.to_string().contains("403") || error.to_string().contains("401")
         });
         if blocked {
+            let first_error = result
+                .as_ref()
+                .err()
+                .map(|e| e.to_string())
+                .unwrap_or_default();
             let alternatives: Vec<_> = job
                 .media
                 .formats
@@ -115,6 +120,7 @@ impl DownloadManager {
                 .take(6)
                 .cloned()
                 .collect();
+            let mut tried = Vec::new();
             for alternative in alternatives {
                 let _ = tokio::fs::remove_file(direct::single_part_path(&job.destination)).await;
                 let _ = tokio::fs::remove_file(crate::config::state_path(&job.destination)).await;
@@ -123,8 +129,22 @@ impl DownloadManager {
                 retry.format = alternative;
                 result = direct::download(self, &retry, tracker).await;
                 if result.is_ok() {
-                    break;
+                    return result;
                 }
+                tried.push(
+                    result
+                        .as_ref()
+                        .err()
+                        .map(|e| e.to_string())
+                        .unwrap_or_default(),
+                );
+            }
+            if result.is_err() {
+                bail!(
+                    "all formats failed; first error: {}; other attempts: {}",
+                    first_error,
+                    tried.join(" | ")
+                );
             }
         }
         result

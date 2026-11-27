@@ -169,4 +169,27 @@ mod tests {
         assert_eq!(media.formats.len(), 2);
         assert!(media.formats.iter().any(|f| f.bitrate == Some(1_200_000)));
     }
+
+    #[test]
+    fn tiktok_download_headers_are_valid() {
+        let item: Value = serde_json::from_str(
+            r#"{"id":"1","desc":"clip","video":{"downloadAddr":"https://v16-webapp-prime.us.tiktok.com/v.mp4"}}"#,
+        )
+        .unwrap();
+        let url = Url::parse("https://www.tiktok.com/@user/video/1").unwrap();
+        let media = parse_item(&item, &url).unwrap();
+        for format in &media.formats {
+            assert!(format.url.starts_with("https://"));
+            for (name, value) in &format.headers {
+                assert!(!name.is_empty() && !value.is_empty(), "empty header");
+                assert!(
+                    !value.chars().any(char::is_control),
+                    "control character in {name}"
+                );
+            }
+            let map = crate::http::headers_map(&format.headers).unwrap();
+            assert!(map.contains_key("user-agent"));
+            assert!(map.contains_key("referer"));
+        }
+    }
 }

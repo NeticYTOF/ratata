@@ -1,3 +1,4 @@
+pub mod audio;
 pub mod dash;
 pub mod hls;
 

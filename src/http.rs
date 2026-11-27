@@ -63,9 +63,22 @@ pub fn headers_map(pairs: &[(String, String)]) -> Result<HeaderMap> {
             "cookie" => COOKIE,
             "authorization" => AUTHORIZATION,
             "user-agent" => USER_AGENT,
-            _ => reqwest::header::HeaderName::from_bytes(key.as_bytes())?,
+            _ => match reqwest::header::HeaderName::from_bytes(key.as_bytes()) {
+                Ok(name) => name,
+                Err(_) => continue,
+            },
         };
-        map.insert(name, HeaderValue::from_str(value)?);
+        let cleaned: String = value
+            .chars()
+            .filter(|c| !c.is_control())
+            .collect::<String>();
+        let cleaned = cleaned.trim();
+        if cleaned.is_empty() {
+            continue;
+        }
+        if let Ok(header_value) = HeaderValue::from_str(cleaned) {
+            map.insert(name, header_value);
+        }
     }
     Ok(map)
 }
@@ -144,5 +157,17 @@ mod tests {
                 "abc123".into()
             )
         );
+    }
+
+    #[test]
+    fn sanitizes_download_headers() {
+        let headers = headers_map(&[
+            ("User-Agent".into(), "Mozilla/5.0\r\nX-Bad: yes".into()),
+            ("Referer".into(), "https://www.tiktok.com/".into()),
+            ("bad header".into(), "value".into()),
+        ])
+        .unwrap();
+        assert_eq!(headers.len(), 2);
+        assert!(headers.contains_key(USER_AGENT));
     }
 }

@@ -1,11 +1,13 @@
 use anyhow::{Context, Result, anyhow};
 use clap::{CommandFactory, Parser, Subcommand};
+use ratata::media::audio::{self, AudioMeta};
 use ratata::{
     Config, DownloadJob, Media, MediaFormat, MediaKind, download, extract, http, sanitize_filename,
 };
 use std::io::{self, IsTerminal, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
+use url::Url;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -30,6 +32,9 @@ struct Cli {
     #[arg(short, long, global = true)]
     output: Option<String>,
 
+    /// Save as MP3 with tags and cover art
+    #[arg(long, global = true)]
+    mp3: bool,
     /// Choose a specific format
     #[arg(short, long, global = true, hide = true)]
     format: Option<String>,
@@ -75,6 +80,8 @@ struct Cli {
 enum Command {
     #[command(alias = "dl", alias = "get", about = "Download one or more URLs")]
     Download { urls: Vec<String> },
+    #[command(about = "Download a link as a tagged MP3")]
+    Mp3 { url: String },
     #[command(about = "Show details and available formats for a URL")]
     Info { url: String },
     #[command(about = "List available formats for a URL")]
@@ -147,6 +154,7 @@ async fn run() -> Result<()> {
         );
     }
 
+    let mut mp3_mode = cli.mp3;
     let mut urls = Vec::new();
     match cli.command {
         Some(Command::Config { action }) => {
@@ -163,6 +171,10 @@ async fn run() -> Result<()> {
             print_media(&media);
             return Ok(());
         }
+        Some(Command::Mp3 { url }) => {
+            mp3_mode = true;
+            urls.push(url);
+        }
         Some(Command::Download { urls: given }) => urls.extend(given),
         None => urls.extend(cli.urls),
     }
@@ -170,6 +182,9 @@ async fn run() -> Result<()> {
     if urls.is_empty() {
         if io::stdin().is_terminal() {
             urls.push(prompt_url()?);
+            if !mp3_mode && !cli.audio_only && !cli.all_formats && !cli.list_formats {
+                mp3_mode = prompt_mp3()?;
+            }
         } else {
             Cli::command().print_help()?;
             return Ok(());
@@ -177,56 +192,102 @@ async fn run() -> Result<()> {
     }
 
     let client = http::build_client(&config)?;
-    let mut jobs = Vec::new();
+    let mut prepared: Vec<(DownloadJob, Option<AudioMeta>)> = Vec::new();
     let mut next_id = 0usize;
     for url in urls.iter() {
-        let media = extract::extract(url, &client, &config).await?;
-        if cli.list_formats {
-            print_media(&media);
-            continue;
-        }
-        let choices: Vec<(MediaFormat, Option<String>)> = if cli.all_formats {
-            media
-                .formats
-                .iter()
-                .cloned()
-                .map(|format| {
-                    let suffix =
-                        format!("{}_{}", format.kind.label(), sanitize_filename(&format.id));
-                    (format, Some(suffix))
-                })
-                .collect()
+        let parsed = Url::parse(url)?;
+        let mut sources: Vec<(Media, Option<AudioMeta>)> = Vec::new();
+        if extract::music::is_spotify(&parsed) || extract::music::is_apple_music(&parsed) {
+            let tracks = extract::music::metadata(&parsed, &client).await?;
+            for track in tracks {
+                let media = extract::music::match_on_youtube(&track, &client).await?;
+                let meta = AudioMeta {
+                    title: track.title.clone(),
+                    artist: track.artist.clone(),
+                    album: track.album.clone(),
+                    year: track.year,
+                    track: track.track,
+                    artwork: track.artwork.clone(),
+                };
+                sources.push((media, Some(meta)));
+            }
         } else {
-            vec![(
-                choose_format(&media, cli.format.as_deref(), cli.audio_only)?,
-                None,
-            )]
-        };
-        for (format, suffix) in choices {
-            let destination = destination_for(
-                &media,
-                &format,
-                &config,
-                cli.output.as_deref(),
-                suffix.as_deref(),
-            )?;
-            jobs.push(DownloadJob {
-                id: next_id,
-                media: media.clone(),
-                format,
-                destination,
-            });
-            next_id += 1;
+            let media = extract::extract(url, &client, &config).await?;
+            sources.push((media, None));
+        }
+
+        for (media, meta) in sources {
+            if cli.list_formats {
+                print_media(&media);
+                continue;
+            }
+            let prefer_audio =
+                mp3_mode || cli.audio_only || extract::music::is_youtube_music(&parsed);
+            let choices: Vec<(MediaFormat, Option<String>)> = if cli.all_formats {
+                media
+                    .formats
+                    .iter()
+                    .cloned()
+                    .map(|format| {
+                        let suffix =
+                            format!("{}_{}", format.kind.label(), sanitize_filename(&format.id));
+                        (format, Some(suffix))
+                    })
+                    .collect()
+            } else {
+                vec![(
+                    choose_format(&media, cli.format.as_deref(), prefer_audio)?,
+                    None,
+                )]
+            };
+            for (format, suffix) in choices {
+                let destination = destination_for(
+                    &media,
+                    &format,
+                    &config,
+                    cli.output.as_deref(),
+                    suffix.as_deref(),
+                )?;
+                prepared.push((
+                    DownloadJob {
+                        id: next_id,
+                        media: media.clone(),
+                        format,
+                        destination,
+                    },
+                    meta.clone(),
+                ));
+                next_id += 1;
+            }
         }
     }
-    if jobs.is_empty() {
+    if prepared.is_empty() {
         return Ok(());
     }
+    let metas: Vec<Option<AudioMeta>> = prepared.iter().map(|(_, meta)| meta.clone()).collect();
+    let jobs: Vec<DownloadJob> = prepared.into_iter().map(|(job, _)| job).collect();
+    let plain_client = client.clone();
+    let jobs_to_convert = jobs.clone();
     let client = Arc::new(client);
     if config.tui && !cli.no_tui {
-        ratata::ui::run(jobs, config, client).await?;
+        ratata::ui::run(jobs, config.clone(), client).await?;
     } else {
         download::run_plain(jobs, &config, client).await?;
+    }
+
+    if mp3_mode {
+        let ffmpeg = audio::ffmpeg_or_error(config.ffmpeg.as_deref())?;
+        for (job, meta) in jobs_to_convert.iter().zip(metas.iter()) {
+            let audio_meta = meta.clone().unwrap_or_else(|| AudioMeta {
+                title: job.media.title.clone(),
+                artist: job.media.author.clone().unwrap_or_default(),
+                ..AudioMeta::default()
+            });
+            let output =
+                audio::convert_to_mp3(&plain_client, &job.destination, &audio_meta, &ffmpeg)
+                    .await?;
+            println!("  ✓ MP3 saved to {}", output.display());
+        }
     }
     Ok(())
 }
@@ -243,6 +304,17 @@ fn prompt_url() -> Result<String> {
         ));
     }
     Ok(url.to_owned())
+}
+
+fn prompt_mp3() -> Result<bool> {
+    print!("Video or MP3? [v/m]: ");
+    io::stdout().flush()?;
+    let mut line = String::new();
+    io::stdin().read_line(&mut line)?;
+    Ok(matches!(
+        line.trim().to_ascii_lowercase().as_str(),
+        "m" | "mp3" | "audio"
+    ))
 }
 
 fn friendly_error(error: &anyhow::Error) -> String {

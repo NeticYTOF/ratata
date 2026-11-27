@@ -1,0 +1,12 @@
+You are continuing the Ratata build (cwd C:\Github Code etc v2\Ratata, repo https://github.com/NeticYTOF/ratata). Your previous session hung and was restarted. Read BRIEF.md, PROGRESS.md and TESTED.md first, then keep working with NO stopping point until all of this is finished and verified. Do NOT run live download tests, benchmarks or screenshots on this laptop (an external Linux box re-tests live; edit, build and run offline unit tests only).
+
+REQUIREMENTS FROM AARAV
+- Human-friendly CLI: `ratata <url>` just works, plain-language errors with a "Try:" line, short human README. Not designed around agents.
+- Minimal, beautiful TUI like modern coding-agent CLIs (omp, Claude Code, Codex CLI, opencode, gemini-cli, charm bubbletea apps, uv, bun). Own identity: tasteful small Unicode logo banner, refined truecolor palette with 256/16-color and NO_COLOR fallbacks, rounded box-drawing header and summary panel, status icons, braille spinners, smooth block-element progress bars, aligned columns (platform, title, size, speed, ETA, percent). No flower, no tunnel, no scenery. Summary screen stays open until a key is pressed on a TTY; non-TTY exits normally. Readable at 80 columns.
+- Windows and Linux both must work.
+- Use gh CLI for GitHub (gh auth setup-git), commit and push at least every 30 minutes, publish the release with gh release create.
+
+FIX NEXT (live results from the Linux box at ca2d55b): PASS Streamable, Facebook. FAIL: Vimeo https://vimeo.com/76979871 (0% forever, no error, add stall timeout and print the real error), TikTok (builder error on CDN request, probably an invalid header value, add a unit test), SoundCloud https://soundcloud.com/forss/flickermood (stream not found), Bilibili BV1GJ411x7h7 (412, use browser-like headers/cookies, playurl with buvid, or __playinfo__ JSON), Dailymotion x2jvvep (no media formats, use player/metadata API). Kick and Twitch unverified. Reddit is IP-blocked on datacenter IPs, expected.
+
+RELEASE: GitHub Actions is disabled for the account at the moment (Aarav is enabling it). Build Windows x86_64 and Linux x86_64 binaries yourself, tag v0.1.0, gh release create with zip/tar.gz and SHA256 sums. README install: Releases download, or cargo install --git https://github.com/NeticYTOF/ratata. Keep a CI workflow (Windows + Linux build+test) in the repo, it should run green once Actions is on.
+Work order: site fixes, TUI polish and docs/tui snapshot, README, release. Commit and push after each step. Do not stop until all of it is done.

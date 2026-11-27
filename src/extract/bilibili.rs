@@ -21,11 +21,12 @@ pub async fn extract(url: &Url, client: &Client) -> Result<Media> {
         })
         .ok_or_else(|| RatataError::UnsupportedUrl(url.to_string()))?;
     let mut headers = browser_headers("https://www.bilibili.com/");
+    headers.retain(|(key, _)| key != "Referer");
     headers.push(("Referer".into(), url.to_string()));
-    headers.push((
-        "Cookie".into(),
-        "buvid3=1A2B3C4D-0000-0000-0000-000000000000infoc; b_nut=1700000000".into(),
-    ));
+    headers.push(("Origin".into(), "https://www.bilibili.com".into()));
+    headers.push(("Accept".into(), "application/json, text/plain, */*".into()));
+    headers.push(("Accept-Language".into(), "zh-CN,zh;q=0.9,en;q=0.8".into()));
+    headers.push(("Cookie".into(), bilibili_cookie()));
     let view = get_json(
         client,
         &format!("https://api.bilibili.com/x/web-interface/view?bvid={bvid}"),
@@ -73,6 +74,25 @@ async fn parse_page_fallback(
     }
     parse(&initial, &playinfo, url, bvid)
         .ok_or_else(|| RatataError::NoFormats(url.to_string()).into())
+}
+
+fn bilibili_cookie() -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let stamp = format!("{nanos:032x}");
+    format!(
+        "buvid3={}-{}-{}-{}-{}infoc; buvid4={}-{}infoc; b_nut={}",
+        &stamp[0..8],
+        &stamp[8..12],
+        &stamp[12..16],
+        &stamp[16..20],
+        &stamp[20..32],
+        &stamp[0..8],
+        &stamp[8..24],
+        nanos / 1_000_000_000
+    )
 }
 
 fn parse(view: &Value, playurl: &Value, url: &Url, bvid: &str) -> Option<Media> {

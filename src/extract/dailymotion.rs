@@ -33,10 +33,14 @@ pub async fn extract(url: &Url, client: &Client) -> Result<Media> {
     if let Ok(regex) = Regex::new(r#"https?:[^"\s<>]+\.(?:mp4|m3u8)[^"\s<>]*"#) {
         for capture in regex.captures_iter(&page) {
             let Some(raw) = capture.get(0) else { continue };
-            let decoded = raw
-                .as_str()
-                .replace("\\/", "/")
-                .replace("https//", "https://");
+            let mut decoded = raw.as_str().to_owned();
+            for _ in 0..3 {
+                let next = decoded.replace("\\/", "/").replace("https//", "https://");
+                if next == decoded {
+                    break;
+                }
+                decoded = next;
+            }
             if decoded.starts_with("http") && seen.insert(decoded.clone()) {
                 let mut format = MediaFormat::new("video", decoded.clone(), MediaKind::Video);
                 if decoded.contains(".m3u8") {

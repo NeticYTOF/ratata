@@ -36,11 +36,24 @@ pub async fn download(
     let ctx = manager.context();
     let mut playlist_url = job.format.url.clone();
     let headers = headers_map(&job.format.headers)?;
-    let master = get_text(&manager.client, &playlist_url, &job.format.headers).await?;
+    let timeout_secs = manager.config.timeout_secs.max(1);
+    let fetch_playlist = |url: String| {
+        let client = manager.client.clone();
+        let job_headers = job.format.headers.clone();
+        async move {
+            tokio::time::timeout(
+                Duration::from_secs(timeout_secs),
+                get_text(&client, &url, &job_headers),
+            )
+            .await
+            .context("HLS playlist fetch timed out")?
+        }
+    };
+    let master = fetch_playlist(playlist_url.clone()).await?;
     if master.contains("#EXT-X-STREAM-INF") {
         playlist_url = select_variant(&playlist_url, &master)?;
     }
-    let playlist = get_text(&manager.client, &playlist_url, &job.format.headers).await?;
+    let playlist = fetch_playlist(playlist_url.clone()).await?;
     if playlist.contains("METHOD=SAMPLE-AES") || playlist.contains("skd://") {
         bail!("HLS stream is DRM-protected (SAMPLE-AES); cannot download without a license");
     }
