@@ -89,6 +89,46 @@ impl DownloadManager {
             .collect()
     }
 
+    async fn fetch_job(
+        &self,
+        job: &DownloadJob,
+        tracker: &progress::ProgressTracker,
+    ) -> Result<std::path::PathBuf> {
+        let mut result = match job.format.manifest {
+            Some(ManifestKind::Hls) => crate::media::hls::download(self, job, tracker).await,
+            Some(ManifestKind::Dash) => crate::media::dash::download(self, job, tracker).await,
+            None => direct::download(self, job, tracker).await,
+        };
+        let blocked = result.as_ref().err().is_some_and(|error| {
+            error.to_string().contains("403") || error.to_string().contains("401")
+        });
+        if blocked {
+            let alternatives: Vec<_> = job
+                .media
+                .formats
+                .iter()
+                .filter(|format| {
+                    format.id != job.format.id
+                        && format.kind == job.format.kind
+                        && format.manifest.is_none()
+                })
+                .take(6)
+                .cloned()
+                .collect();
+            for alternative in alternatives {
+                let _ = tokio::fs::remove_file(direct::single_part_path(&job.destination)).await;
+                let _ = tokio::fs::remove_file(crate::config::state_path(&job.destination)).await;
+                tracker.reset();
+                let mut retry = job.clone();
+                retry.format = alternative;
+                result = direct::download(self, &retry, tracker).await;
+                if result.is_ok() {
+                    break;
+                }
+            }
+        }
+        result
+    }
     pub async fn download(&self, job: DownloadJob) -> Result<std::path::PathBuf> {
         let started = Instant::now();
         let _permit = self.global.acquire().await?;
@@ -111,11 +151,7 @@ impl DownloadManager {
             progress::ProgressTracker::new(self.tx.clone(), job.id, job.media.title.clone(), total);
         let reporter = tracker.spawn();
         tracker.set_state(JobState::Running);
-        let result = match job.format.manifest {
-            Some(ManifestKind::Hls) => crate::media::hls::download(self, &job, &tracker).await,
-            Some(ManifestKind::Dash) => crate::media::dash::download(self, &job, &tracker).await,
-            None => direct::download(self, &job, &tracker).await,
-        };
+        let result = self.fetch_job(&job, &tracker).await;
         let elapsed = started.elapsed().as_secs_f64().max(0.1);
         let measured = (tracker.downloaded() as f64 / elapsed) as u64;
         let previous = self.average_speed.load(Ordering::Relaxed);

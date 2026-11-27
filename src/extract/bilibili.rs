@@ -20,28 +20,59 @@ pub async fn extract(url: &Url, client: &Client) -> Result<Media> {
                 .map(|(_, value)| value.into_owned())
         })
         .ok_or_else(|| RatataError::UnsupportedUrl(url.to_string()))?;
-    let headers = browser_headers("https://www.bilibili.com/");
+    let mut headers = browser_headers("https://www.bilibili.com/");
+    headers.push(("Referer".into(), url.to_string()));
+    headers.push((
+        "Cookie".into(),
+        "buvid3=1A2B3C4D-0000-0000-0000-000000000000infoc; b_nut=1700000000".into(),
+    ));
     let view = get_json(
         client,
         &format!("https://api.bilibili.com/x/web-interface/view?bvid={bvid}"),
         &headers,
     )
-    .await?;
-    if view["code"].as_i64().unwrap_or(-1) != 0 {
-        return Err(RatataError::Extraction(format!("Bilibili rejected {bvid}")).into());
+    .await;
+    if let Ok(view) = &view
+        && view["code"].as_i64().unwrap_or(-1) == 0
+    {
+        let cid = view["data"]["cid"]
+            .as_u64()
+            .ok_or_else(|| RatataError::Extraction("missing CID".into()))?;
+        let playurl = get_json(
+            client,
+            &format!("https://api.bilibili.com/x/player/playurl?bvid={bvid}&cid={cid}&qn=64&fnval=0&fourk=1"),
+            &headers,
+        )
+        .await?;
+        return parse(view, &playurl, url, &bvid)
+            .ok_or_else(|| RatataError::NoFormats(url.to_string()).into());
     }
-    let cid = view["data"]["cid"]
-        .as_u64()
-        .ok_or_else(|| RatataError::Extraction("missing CID".into()))?;
-    let playurl = get_json(
-        client,
-        &format!(
-            "https://api.bilibili.com/x/player/playurl?bvid={bvid}&cid={cid}&qn=64&fnval=0&fourk=1"
-        ),
-        &headers,
-    )
-    .await?;
-    parse(&view, &playurl, url, &bvid).ok_or_else(|| RatataError::NoFormats(url.to_string()).into())
+    parse_page_fallback(client, url, &bvid, &headers).await
+}
+
+async fn parse_page_fallback(
+    client: &Client,
+    url: &Url,
+    bvid: &str,
+    headers: &[(String, String)],
+) -> Result<Media> {
+    let page = crate::http::get_text(client, url.as_str(), headers).await?;
+    let pattern = Regex::new(r"(?s)window\.__playinfo__\s*=\s*(\{.*?\})\s*</script>")?;
+    let playinfo = pattern
+        .captures(&page)
+        .and_then(|c| serde_json::from_str::<Value>(&c[1]).ok())
+        .ok_or_else(|| RatataError::Extraction("Bilibili play info not found".into()))?;
+    let mut initial =
+        serde_json::json!({"data": {"title": bvid, "owner": {"name": ""}, "duration": 0}});
+    let state = Regex::new(r"(?s)window\.__INITIAL_STATE__\s*=\s*(\{.*?\});")
+        .ok()
+        .and_then(|r| r.captures(&page))
+        .and_then(|c| serde_json::from_str::<Value>(&c[1]).ok());
+    if let Some(value) = state {
+        initial["data"] = value["videoData"].clone();
+    }
+    parse(&initial, &playinfo, url, bvid)
+        .ok_or_else(|| RatataError::NoFormats(url.to_string()).into())
 }
 
 fn parse(view: &Value, playurl: &Value, url: &Url, bvid: &str) -> Option<Media> {

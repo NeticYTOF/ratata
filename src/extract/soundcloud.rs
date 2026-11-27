@@ -28,7 +28,7 @@ pub async fn extract(url: &Url, client: &Client) -> Result<Media> {
         }
     }
 
-    let hydration = Regex::new(r"(?s)window\.__sc_hydration\s*=\s*(\[.*?\]);")
+    let hydration = Regex::new(r"(?s)window\.__sc_hydration\s*=\s*(\[.*?\])")
         .ok()
         .and_then(|r| r.captures(&page))
         .and_then(|c| serde_json::from_str::<Value>(&c[1]).ok());
@@ -74,7 +74,9 @@ async fn discover_client_id(client: &Client) -> Option<String> {
 
 async fn resolve_streams(
     client: &Client,
+
     mut media: Media,
+
     headers: &[(String, String)],
 ) -> Result<Media> {
     for format in &mut media.formats {

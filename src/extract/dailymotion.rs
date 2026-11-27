@@ -1,7 +1,8 @@
 use crate::error::RatataError;
 use crate::http::{browser_headers, get_json, get_text};
 use crate::model::{ManifestKind, Media, MediaFormat, MediaKind};
-use anyhow::{Context, Result};
+use anyhow::Result;
+use regex::Regex;
 use reqwest::Client;
 use serde_json::Value;
 use url::Url;
@@ -17,16 +18,38 @@ pub async fn extract(url: &Url, client: &Client) -> Result<Media> {
         })
         .ok_or_else(|| RatataError::UnsupportedUrl(url.to_string()))?;
     let endpoint = format!("https://www.dailymotion.com/player/metadata/video/{id}");
-    let headers = browser_headers("https://www.dailymotion.com/");
+    let mut headers = browser_headers("https://www.dailymotion.com/");
+    headers.retain(|(key, _)| key != "Referer");
+    headers.push(("Referer".into(), url.to_string()));
     if let Ok(json) = get_json(client, &endpoint, &headers).await
         && let Some(media) = parse(&json, url, id)
     {
         return Ok(media);
     }
-    let page = get_text(client, url.as_str(), &headers)
-        .await
-        .unwrap_or_default();
-    super::generic::parse(url, &page).context("Dailymotion page had no playable media")
+    let embed = format!("https://www.dailymotion.com/embed/video/{id}");
+    let page = get_text(client, &embed, &headers).await.unwrap_or_default();
+    let mut media = Media::new("Dailymotion", url.to_string(), id);
+    let mut seen = std::collections::HashSet::new();
+    if let Ok(regex) = Regex::new(r#"https?:[^"\s<>]+\.(?:mp4|m3u8)[^"\s<>]*"#) {
+        for capture in regex.captures_iter(&page) {
+            let Some(raw) = capture.get(0) else { continue };
+            let decoded = raw
+                .as_str()
+                .replace("\\/", "/")
+                .replace("https//", "https://");
+            if decoded.starts_with("http") && seen.insert(decoded.clone()) {
+                let mut format = MediaFormat::new("video", decoded.clone(), MediaKind::Video);
+                if decoded.contains(".m3u8") {
+                    format.manifest = Some(ManifestKind::Hls);
+                }
+                media.add(format);
+            }
+        }
+    }
+    if media.formats.is_empty() {
+        return Err(RatataError::NoFormats(url.to_string()).into());
+    }
+    Ok(media)
 }
 
 fn parse(json: &Value, url: &Url, id: &str) -> Option<Media> {

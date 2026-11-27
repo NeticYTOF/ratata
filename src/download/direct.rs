@@ -255,21 +255,26 @@ async fn stream_single(
         .map(|m| m.len())
         .unwrap_or(0);
     let headers = headers_map(&job.format.headers)?;
-    let mut response = manager
-        .client
-        .get(&job.format.url)
-        .headers(headers.clone())
-        .header(RANGE, format!("bytes={start}-"))
-        .send()
-        .await?;
-    if response.status().as_u16() != 206 {
-        start = 0;
-        response = manager
+    let request_timeout = std::time::Duration::from_secs(manager.config.timeout_secs.max(1));
+    let mut response = tokio::time::timeout(
+        request_timeout,
+        manager
             .client
             .get(&job.format.url)
-            .headers(headers)
-            .send()
-            .await?;
+            .headers(headers.clone())
+            .header(RANGE, format!("bytes={start}-"))
+            .send(),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("download stalled while connecting"))??;
+    if response.status().as_u16() != 206 {
+        start = 0;
+        response = tokio::time::timeout(
+            request_timeout,
+            manager.client.get(&job.format.url).headers(headers).send(),
+        )
+        .await
+        .map_err(|_| anyhow::anyhow!("download stalled while connecting"))??;
     }
     response.error_for_status_ref()?;
     let file = OpenOptions::new()
@@ -284,7 +289,12 @@ async fn stream_single(
     }
     tracker.add(start);
     let mut stream = response.bytes_stream();
-    while let Some(chunk) = stream.next().await {
+    let stall = std::time::Duration::from_secs(manager.config.timeout_secs.max(1));
+    loop {
+        let next = tokio::time::timeout(stall, stream.next()).await;
+        let Some(chunk) = next.map_err(|_| anyhow::anyhow!("download stalled"))? else {
+            break;
+        };
         manager.gate().await?;
         let chunk = chunk?;
         writer.write_all(&chunk).await?;

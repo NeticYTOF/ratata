@@ -12,13 +12,18 @@ pub async fn extract(url: &Url, client: &Client) -> Result<Media> {
         "https://www.facebook.com/plugins/video.php?href={}",
         percent_encoding::utf8_percent_encode(url.as_str(), percent_encoding::NON_ALPHANUMERIC)
     );
-    let html = get_text(
-        client,
-        &embed,
-        &browser_headers("https://www.facebook.com/"),
-    )
-    .await?;
-    parse(&html, url)
+    let headers = browser_headers("https://www.facebook.com/");
+    let html = get_text(client, &embed, &headers).await.unwrap_or_default();
+    if let Ok(media) = parse(&html, url) {
+        return Ok(media);
+    }
+    let mbasic = url
+        .to_string()
+        .replace("www.facebook.com", "mbasic.facebook.com");
+    let fallback = get_text(client, &mbasic, &headers)
+        .await
+        .unwrap_or_default();
+    parse(&fallback, url)
 }
 
 fn parse(html: &str, url: &Url) -> Result<Media> {
@@ -42,8 +47,10 @@ fn parse(html: &str, url: &Url) -> Result<Media> {
     for key in [
         "playable_url_quality_hd",
         "browser_native_hd_url",
+        "hd_src",
         "playable_url",
         "browser_native_sd_url",
+        "sd_src",
     ] {
         let pattern = format!(r#"{key}\\?":\\?"([^"]+)""#);
         let Some(value) = Regex::new(&pattern)

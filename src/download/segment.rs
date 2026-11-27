@@ -62,7 +62,17 @@ pub async fn run(
         writer.seek(std::io::SeekFrom::Start(offset)).await?;
         let mut stream = response.bytes_stream();
         let mut failed = false;
-        while let Some(chunk) = stream.next().await {
+        let stall = std::time::Duration::from_secs(manager.config.timeout_secs.max(1));
+        loop {
+            let next = tokio::time::timeout(stall, stream.next()).await;
+            let chunk = match next {
+                Ok(Some(chunk)) => chunk,
+                Ok(None) => break,
+                Err(_) => {
+                    failed = true;
+                    break;
+                }
+            };
             manager.gate().await?;
             let chunk = match chunk {
                 Ok(chunk) => chunk,

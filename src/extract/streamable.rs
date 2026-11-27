@@ -40,6 +40,7 @@ fn parse(json: &Value, url: &Url, code: &str) -> Option<Media> {
             let Some(address) = file["url"].as_str() else {
                 continue;
             };
+            let address = normalize_media_url(address);
             let mut format = MediaFormat::new(name, address, MediaKind::Video);
             format
                 .headers
@@ -61,9 +62,45 @@ fn parse(json: &Value, url: &Url, code: &str) -> Option<Media> {
     }
 }
 
+fn normalize_media_url(raw: &str) -> String {
+    if let Some(rest) = raw.strip_prefix("https//") {
+        return format!("https://{rest}");
+    }
+    if let Some(rest) = raw.strip_prefix("http//") {
+        return format!("http://{rest}");
+    }
+    if let Some(rest) = raw.strip_prefix("//") {
+        return format!("https://{rest}");
+    }
+    if raw.starts_with('/') {
+        return format!("https://streamable.com{raw}");
+    }
+    raw.to_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn normalizes_cdn_url_variants() {
+        assert_eq!(
+            normalize_media_url("https//cdn-cf-west.streamable.com/video/a.mp4"),
+            "https://cdn-cf-west.streamable.com/video/a.mp4"
+        );
+        assert_eq!(
+            normalize_media_url("//cdn.streamable.com/a.mp4"),
+            "https://cdn.streamable.com/a.mp4"
+        );
+        assert_eq!(
+            normalize_media_url("/video/a.mp4"),
+            "https://streamable.com/video/a.mp4"
+        );
+        assert_eq!(
+            normalize_media_url("https://cdn.streamable.com/a.mp4"),
+            "https://cdn.streamable.com/a.mp4"
+        );
+    }
 
     #[test]
     fn picks_largest_streamable_file() {
