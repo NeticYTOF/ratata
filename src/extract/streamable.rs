@@ -40,7 +40,7 @@ fn parse(json: &Value, url: &Url, code: &str) -> Option<Media> {
             let Some(address) = file["url"].as_str() else {
                 continue;
             };
-            let address = normalize_media_url(address);
+            let address = normalize_streamable_url(address);
             let mut format = MediaFormat::new(name, address, MediaKind::Video);
             format
                 .headers
@@ -62,20 +62,12 @@ fn parse(json: &Value, url: &Url, code: &str) -> Option<Media> {
     }
 }
 
-fn normalize_media_url(raw: &str) -> String {
-    if let Some(rest) = raw.strip_prefix("https//") {
-        return format!("https://{rest}");
+fn normalize_streamable_url(raw: &str) -> String {
+    let value = crate::http::normalize_media_url(raw);
+    if value.starts_with('/') {
+        return format!("https://streamable.com{value}");
     }
-    if let Some(rest) = raw.strip_prefix("http//") {
-        return format!("http://{rest}");
-    }
-    if let Some(rest) = raw.strip_prefix("//") {
-        return format!("https://{rest}");
-    }
-    if raw.starts_with('/') {
-        return format!("https://streamable.com{raw}");
-    }
-    raw.to_owned()
+    value
 }
 
 #[cfg(test)]
@@ -85,19 +77,23 @@ mod tests {
     #[test]
     fn normalizes_cdn_url_variants() {
         assert_eq!(
-            normalize_media_url("https//cdn-cf-west.streamable.com/video/a.mp4"),
+            normalize_streamable_url("https:https://cdn-cf-west.streamable.com/video/a.mp4?x=1"),
+            "https://cdn-cf-west.streamable.com/video/a.mp4?x=1"
+        );
+        assert_eq!(
+            normalize_streamable_url("https//cdn-cf-west.streamable.com/video/a.mp4"),
             "https://cdn-cf-west.streamable.com/video/a.mp4"
         );
         assert_eq!(
-            normalize_media_url("//cdn.streamable.com/a.mp4"),
+            normalize_streamable_url("//cdn.streamable.com/a.mp4"),
             "https://cdn.streamable.com/a.mp4"
         );
         assert_eq!(
-            normalize_media_url("/video/a.mp4"),
+            normalize_streamable_url("/video/a.mp4"),
             "https://streamable.com/video/a.mp4"
         );
         assert_eq!(
-            normalize_media_url("https://cdn.streamable.com/a.mp4"),
+            normalize_streamable_url("https://cdn.streamable.com/a.mp4"),
             "https://cdn.streamable.com/a.mp4"
         );
     }

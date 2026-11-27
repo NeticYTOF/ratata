@@ -57,23 +57,33 @@ pub fn parse_netscape(raw: &str) -> Vec<(String, String, String, String)> {
 
 /// Normalises CDN URLs seen in site APIs and previously corrupted URLs.
 pub fn normalize_media_url(raw: &str) -> String {
-    let trimmed = raw.trim();
-    if let Some(rest) = trimmed.strip_prefix("https://https//") {
-        return format!("https://{rest}");
+    let mut value = raw.trim().to_owned();
+    loop {
+        let next = if let Some(rest) = value.strip_prefix("https:https://") {
+            format!("https://{rest}")
+        } else if let Some(rest) = value.strip_prefix("https:https//") {
+            format!("https://{rest}")
+        } else if let Some(rest) = value.strip_prefix("https://https://") {
+            format!("https://{rest}")
+        } else if let Some(rest) = value.strip_prefix("https://https//") {
+            format!("https://{rest}")
+        } else if let Some(rest) = value.strip_prefix("http:http://") {
+            format!("http://{rest}")
+        } else if let Some(rest) = value.strip_prefix("http//") {
+            format!("http://{rest}")
+        } else if let Some(rest) = value.strip_prefix("https//") {
+            format!("https://{rest}")
+        } else if let Some(rest) = value.strip_prefix("//") {
+            format!("https://{rest}")
+        } else {
+            break;
+        };
+        if next == value {
+            break;
+        }
+        value = next;
     }
-    if let Some(rest) = trimmed.strip_prefix("http://http//") {
-        return format!("http://{rest}");
-    }
-    if let Some(rest) = trimmed.strip_prefix("https//") {
-        return format!("https://{rest}");
-    }
-    if let Some(rest) = trimmed.strip_prefix("http//") {
-        return format!("http://{rest}");
-    }
-    if let Some(rest) = trimmed.strip_prefix("//") {
-        return format!("https://{rest}");
-    }
-    trimmed.to_owned()
+    value
 }
 
 pub fn headers_map(pairs: &[(String, String)]) -> Result<HeaderMap> {
@@ -197,6 +207,10 @@ mod tests {
         assert_eq!(
             normalize_media_url("https://https//cdn-cf-west.streamable.com/video/a.mp4"),
             "https://cdn-cf-west.streamable.com/video/a.mp4"
+        );
+        assert_eq!(
+            normalize_media_url("https:https://cdn-cf-west.streamable.com/video/a.mp4?x=1"),
+            "https://cdn-cf-west.streamable.com/video/a.mp4?x=1"
         );
         assert_eq!(
             normalize_media_url("//cdn.example/a.mp4"),
