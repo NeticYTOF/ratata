@@ -30,6 +30,7 @@ Updated: 2026-11-27
 - TUI batch fixes: MP3 jobs finish on final `.mp3` path with intermediate and sidecar cleanup,
   per-job temp/final paths avoid collisions, invalid links become friendly failed rows,
 - Summary screen now shows friendly failure reasons on failed rows and hides the saved-folder line when zero files were saved.
+- User-facing CLI/TUI errors strip raw URLs and query strings; verbose/RATATA_DEBUG keeps full detail.
 
 ## Speed benchmarks (`scripts/bench.py`, Windows, release build)
 

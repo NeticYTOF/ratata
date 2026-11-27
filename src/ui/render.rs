@@ -356,20 +356,14 @@ fn draw_summary(app: &App, frame: &mut Frame, area: Rect, palette: &theme::Palet
 }
 
 fn friendly_failure(error: &str) -> String {
-    let lower = error.to_ascii_lowercase();
-    if lower.contains("403") || lower.contains("forbidden") {
-        "HTTP 403 blocked by site".into()
-    } else if lower.contains("401") {
-        "HTTP 401 sign-in required".into()
-    } else if lower.contains("not look like a link") {
-        "Not a link — paste a full https:// URL".into()
-    } else if lower.contains("no media formats") || lower.contains("no playable media") {
-        "No playable media found".into()
-    } else if lower.contains("timed out") || lower.contains("stalled") {
-        "Site timed out".into()
-    } else {
-        error.chars().take(80).collect()
+    let cleaned = crate::error::sanitize_error(error);
+    if cleaned
+        .to_ascii_lowercase()
+        .contains("not look like a link")
+    {
+        return "Not a link — paste a full https:// URL".into();
     }
+    cleaned
 }
 
 fn draw_footer(frame: &mut Frame, area: Rect, palette: &theme::Palette) {

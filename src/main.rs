@@ -2,7 +2,8 @@ use anyhow::{Context, Result, anyhow};
 use clap::{CommandFactory, Parser, Subcommand};
 use ratata::media::audio::AudioMeta;
 use ratata::{
-    Config, DownloadJob, Media, MediaFormat, MediaKind, download, extract, http, sanitize_filename,
+    Config, DownloadJob, Media, MediaFormat, MediaKind, download, extract, http, sanitize_error,
+    sanitize_filename,
 };
 use std::collections::HashSet;
 use std::io::{self, IsTerminal, Write};
@@ -415,9 +416,9 @@ fn prompt_mp3() -> Result<bool> {
 }
 
 fn friendly_error(error: &anyhow::Error) -> String {
-    let message = format!("{error:#}");
+    let message = sanitize_error(&format!("{error:#}"));
     let lower = message.to_ascii_lowercase();
-    let suggestion = if lower.contains("unsupported url") {
+    let suggestion = if lower.contains("unsupported url") || lower.contains("not supported") {
         "Check that the link is complete, or paste a direct media link such as .mp4 or .m3u8."
     } else if lower.contains("bot") || lower.contains("sign in") || lower.contains("captcha") {
         "The site asked for a bot check. Export your browser cookies and retry with --cookies cookies.txt (or --cookies-from-browser BROWSER)."

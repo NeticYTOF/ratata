@@ -9,5 +9,5 @@ pub mod ui;
 
 pub use config::Config;
 pub use config::{expand_tilde as expand_tilde_path, state_path};
-pub use error::{RatataError, sanitize_filename};
+pub use error::{RatataError, sanitize_error, sanitize_filename};
 pub use model::{DownloadJob, JobProgress, JobState, ManifestKind, Media, MediaFormat, MediaKind};

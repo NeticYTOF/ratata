@@ -207,10 +207,11 @@ impl DownloadManager {
                     } else {
                         stalled += 1;
                         if stalled >= 20 {
-                            break Err(anyhow::anyhow!(
+                            let detail = format!(
                                 "no download progress for 20 seconds at {}",
                                 job.format.url
-                            ));
+                            );
+                            break Err(anyhow::anyhow!("{}", crate::error::sanitize_error(&detail)));
                         }
                     }
                 }
