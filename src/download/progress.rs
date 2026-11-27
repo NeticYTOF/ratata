@@ -18,6 +18,7 @@ struct TrackerInner {
     total: Mutex<Option<u64>>,
     downloaded: AtomicU64,
     state: Mutex<JobState>,
+    segments: Mutex<Vec<bool>>,
 }
 
 impl ProgressTracker {
@@ -35,6 +36,7 @@ impl ProgressTracker {
                 total: Mutex::new(total),
                 downloaded: AtomicU64::new(0),
                 state: Mutex::new(JobState::Queued),
+                segments: Mutex::new(Vec::new()),
             }),
         }
     }
@@ -56,6 +58,18 @@ impl ProgressTracker {
         self.emit(0.0);
     }
 
+    pub fn set_segment_count(&self, count: usize) {
+        *self.inner.segments.lock() = vec![false; count.min(256)];
+        self.emit(0.0);
+    }
+
+    pub fn mark_segment(&self, index: usize) {
+        if let Some(flag) = self.inner.segments.lock().get_mut(index) {
+            *flag = true;
+        }
+        self.emit(0.0);
+    }
+
     pub fn set_state(&self, state: JobState) {
         *self.inner.state.lock() = state;
         self.emit(0.0);
@@ -63,21 +77,31 @@ impl ProgressTracker {
 
     fn emit(&self, speed: f64) {
         let inner = &self.inner;
+        let downloaded = inner.downloaded.load(Ordering::Relaxed);
+        let total = *inner.total.lock();
+        let eta = match (total, speed) {
+            (Some(total), speed) if speed > 1.0 && total > downloaded => {
+                Some((total - downloaded) as f64 / speed)
+            }
+            _ => None,
+        };
         let _ = inner.tx.send(JobProgress {
             id: inner.id,
             label: inner.label.clone(),
-            downloaded: inner.downloaded.load(Ordering::Relaxed),
-            total: *inner.total.lock(),
+            downloaded,
+            total,
             speed,
             state: *inner.state.lock(),
             error: None,
+            segments: inner.segments.lock().clone(),
+            eta,
         });
     }
 
     pub fn spawn(&self) -> JoinHandle<()> {
         let tracker = self.clone();
         tokio::spawn(async move {
-            let mut tick = tokio::time::interval(Duration::from_millis(90));
+            let mut tick = tokio::time::interval(Duration::from_millis(33));
             let mut previous = tracker.downloaded();
             let mut last = Instant::now();
             let mut smoothed = 0.0;

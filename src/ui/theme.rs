@@ -1,5 +1,47 @@
 use ratatui::style::Color;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColorMode {
+    True,
+    Ansi256,
+    NoColor,
+}
+
+impl ColorMode {
+    pub fn from_env() -> Self {
+        if std::env::var("NO_COLOR").is_ok() {
+            return Self::NoColor;
+        }
+        let colorterm = std::env::var("COLORTERM")
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        let term = std::env::var("TERM")
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        if colorterm.contains("truecolor") || colorterm.contains("24bit") {
+            Self::True
+        } else if term.contains("256color") {
+            Self::Ansi256
+        } else if cfg!(windows) {
+            // Windows Terminal and modern conhost support truecolor via VT.
+            Self::True
+        } else {
+            Self::Ansi256
+        }
+    }
+}
+
+pub fn adapt(color: Color, mode: ColorMode) -> Color {
+    match (color, mode) {
+        (_, ColorMode::NoColor) => Color::Reset,
+        (Color::Rgb(r, g, b), ColorMode::Ansi256) => {
+            let level = |v: u8| -> u8 { (u16::from(v) * 5 / 255) as u8 };
+            Color::Indexed(16 + 36 * level(r) + 6 * level(g) + level(b))
+        }
+        (other, _) => other,
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Palette {
     pub name: &'static str,
@@ -12,8 +54,8 @@ pub struct Palette {
     pub petals: [Color; 5],
 }
 
-pub fn palette(name: &str) -> Palette {
-    match name.to_ascii_lowercase().as_str() {
+pub fn palette(name: &str, mode: ColorMode) -> Palette {
+    let raw = match name.to_ascii_lowercase().as_str() {
         "aurora" => Palette {
             name: "aurora",
             background: Color::Reset,
@@ -62,10 +104,41 @@ pub fn palette(name: &str) -> Palette {
                 Color::Rgb(255, 186, 224),
             ],
         },
+    };
+    Palette {
+        name: raw.name,
+        background: adapt(raw.background, mode),
+        text: adapt(raw.text, mode),
+        muted: adapt(raw.muted, mode),
+        accent: adapt(raw.accent, mode),
+        bloom: adapt(raw.bloom, mode),
+        glow: adapt(raw.glow, mode),
+        petals: raw.petals.map(|c| adapt(c, mode)),
     }
 }
 
 pub fn petal_for(palette: &Palette, depth: usize, tick: u64) -> Color {
     let index = (depth + (tick / 6) as usize) % palette.petals.len();
     palette.petals[index]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn maps_rgb_to_ansi256_and_resets_for_no_color() {
+        assert!(matches!(
+            adapt(Color::Rgb(255, 105, 180), ColorMode::Ansi256),
+            Color::Indexed(_)
+        ));
+        assert_eq!(
+            adapt(Color::Rgb(255, 105, 180), ColorMode::NoColor),
+            Color::Reset
+        );
+        assert_eq!(
+            adapt(Color::Rgb(1, 2, 3), ColorMode::True),
+            Color::Rgb(1, 2, 3)
+        );
+    }
 }

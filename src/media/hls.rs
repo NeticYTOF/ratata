@@ -86,14 +86,14 @@ pub async fn download(
     {
         tracker.set_total(first_size * parts.len() as u64);
     }
-
+    tracker.set_segment_count(cleanup_parts.len());
     let concurrency = manager.config.segments.clamp(2, 12);
     let sequence: Vec<Segment> = std::iter::once(init.clone())
         .flatten()
         .chain(segments.iter().cloned())
         .collect();
-    let mut tasks =
-        futures_util::stream::iter(parts.into_iter().zip(sequence).map(|(part, segment)| {
+    let mut tasks = futures_util::stream::iter(parts.into_iter().enumerate().zip(sequence).map(
+        |((index, part), segment)| {
             let ctx = ctx.clone();
             let tracker = tracker.clone();
             async move {
@@ -107,10 +107,12 @@ pub async fn download(
                 file.write_all(&bytes).await?;
                 file.flush().await?;
                 tracker.add(bytes.len() as u64);
+                tracker.mark_segment(index);
                 Ok::<(), anyhow::Error>(())
             }
-        }))
-        .buffer_unordered(concurrency);
+        },
+    ))
+    .buffer_unordered(concurrency);
 
     let mut failures = Vec::new();
     while let Some(result) = tasks.next().await {

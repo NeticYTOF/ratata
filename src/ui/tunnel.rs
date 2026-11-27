@@ -5,7 +5,7 @@ use ratatui::style::{Color, Style};
 
 const LANES: [f32; 6] = [0.35, 1.38, 2.42, 3.51, 4.63, 5.66];
 
-pub fn draw(buf: &mut Buffer, area: Rect, palette: &Palette, tick: u64, energy: f64) {
+pub fn draw(buf: &mut Buffer, area: Rect, palette: &Palette, tick: u64, energy: f64, bloom: f64) {
     if area.width < 12 || area.height < 8 {
         return;
     }
@@ -63,12 +63,21 @@ pub fn draw(buf: &mut Buffer, area: Rect, palette: &Palette, tick: u64, energy: 
         let x = (cx + angle.cos() * area.width as f32 * 0.58 * scale).round() as i32;
         let y = (cy + angle.sin() * area.height as f32 * 0.70 * scale * scale).round() as i32;
         let color = palette.petals[lane % palette.petals.len()];
-        let glyphs = if scale > 0.42 {
+        let open = scale > (0.55 - bloom as f32 * 0.35);
+        let glyphs = if open {
             ['✿', '❀', '✽', '❁']
         } else {
             ['✾', '✿', '❃', '✽']
         };
-        draw_flower(buf, area, x, y, glyphs[lane % glyphs.len()], color, scale);
+        draw_flower(
+            buf,
+            area,
+            x,
+            y,
+            glyphs[lane % glyphs.len()],
+            color,
+            scale + bloom as f32 * 0.25,
+        );
     }
 
     let spin = tick / 5;

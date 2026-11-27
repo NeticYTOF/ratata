@@ -79,6 +79,12 @@ pub async fn download(
     }
     state.save(&state_file).ok();
     tracker.add(state.segments.iter().map(|s| s.done).sum());
+    tracker.set_segment_count(count);
+    for (index, segment) in state.segments.iter().enumerate() {
+        if segment.done == segment.end - segment.start + 1 {
+            tracker.mark_segment(index);
+        }
+    }
 
     let mut tasks = futures_util::stream::iter(state.segments.clone().into_iter().map(|segment| {
         let tracker = tracker.clone();
@@ -98,6 +104,7 @@ pub async fn download(
                 if let Some(segment) = state.segments.iter_mut().find(|s| s.index == index) {
                     segment.done = segment.end - segment.start + 1;
                 }
+                tracker.mark_segment(index);
                 state.save(&state_file).ok();
             }
             Err(error) => failures.push(error.to_string()),
@@ -109,7 +116,10 @@ pub async fn download(
             tokio::fs::remove_file(&part).await.ok();
             tokio::fs::remove_file(&state_file).await.ok();
             tracker.reset();
-            return stream_single(manager, job, tracker, Some(total)).await;
+            tracker.set_segment_count(1);
+            let result = stream_single(manager, job, tracker, Some(total)).await;
+            tracker.mark_segment(0);
+            return result;
         }
         bail!("segment failures: {}", failures.join("; "));
     }

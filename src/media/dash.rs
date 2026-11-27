@@ -79,44 +79,47 @@ pub async fn download(
     {
         tracker.set_total(size * segment_urls.len() as u64);
     }
-
+    tracker.set_segment_count(parts.len());
     let ctx = manager.context();
     let concurrency = manager.config.segments.clamp(2, 12);
     let mut tasks =
-        futures_util::stream::iter(parts.clone().into_iter().zip(targets).map(|(part, url)| {
-            let ctx = ctx.clone();
-            let tracker = tracker.clone();
-            async move {
-                let mut last = String::new();
-                for attempt in 0..=ctx.config.retries {
-                    ctx.gate().await?;
-                    match ctx.client.get(&url).send().await {
-                        Ok(response) if response.status().is_success() => {
-                            let bytes = response.bytes().await?;
-                            let mut file = OpenOptions::new()
-                                .create(true)
-                                .truncate(true)
-                                .write(true)
-                                .open(&part)
-                                .await?;
-                            file.write_all(&bytes).await?;
-                            file.flush().await?;
-                            tracker.add(bytes.len() as u64);
-                            return Ok(());
-                        }
-                        Ok(response) => {
-                            last = format!("HTTP {}", response.status());
-                            if response.status().as_u16() == 404 {
-                                break;
+        futures_util::stream::iter(parts.clone().into_iter().enumerate().zip(targets).map(
+            |((index, part), url)| {
+                let ctx = ctx.clone();
+                let tracker = tracker.clone();
+                async move {
+                    let mut last = String::new();
+                    for attempt in 0..=ctx.config.retries {
+                        ctx.gate().await?;
+                        match ctx.client.get(&url).send().await {
+                            Ok(response) if response.status().is_success() => {
+                                let bytes = response.bytes().await?;
+                                let mut file = OpenOptions::new()
+                                    .create(true)
+                                    .truncate(true)
+                                    .write(true)
+                                    .open(&part)
+                                    .await?;
+                                file.write_all(&bytes).await?;
+                                file.flush().await?;
+                                tracker.add(bytes.len() as u64);
+                                tracker.mark_segment(index);
+                                return Ok(());
                             }
+                            Ok(response) => {
+                                last = format!("HTTP {}", response.status());
+                                if response.status().as_u16() == 404 {
+                                    break;
+                                }
+                            }
+                            Err(error) => last = error.to_string(),
                         }
-                        Err(error) => last = error.to_string(),
+                        tokio::time::sleep(Duration::from_millis(100u64 << attempt.min(8))).await;
                     }
-                    tokio::time::sleep(Duration::from_millis(100u64 << attempt.min(8))).await;
+                    bail!("DASH segment failed: {last}")
                 }
-                bail!("DASH segment failed: {last}")
-            }
-        }))
+            },
+        ))
         .buffer_unordered(concurrency);
 
     let mut failures = Vec::new();

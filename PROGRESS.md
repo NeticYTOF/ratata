@@ -12,13 +12,14 @@ Updated: 2026-11-27
 - Extractors: YouTube (Innertube + signature deciphering), Instagram, X/Twitter, TikTok,
   Reddit, Vimeo, Dailymotion, SoundCloud, Twitch, Streamable, Imgur, Pinterest, Bilibili,
   Kick, Facebook, generic HTML/direct URLs (og tags, JSON-LD, media elements).
-- Flower-tunnel TUI: perspective rings, flowers, drifting petals, breathing bloom,
-  theme cycling, live job bars, error detail panel, keyboard controls (q/p/space/j/k/t).
+- Flower-tunnel TUI: 60fps perspective rings driven by real throughput, flowers bloom
+  with progress, drifting petals, ETA and per-download segment maps in job bars,
+  truecolor/256/no-color fallbacks, resize-safe layout, diffed rendering.
 - `--all-formats` downloads every available format as separate suffixed files (galleries).
 - `--cookies FILE` loads a Netscape cookie jar into a domain-scoped reqwest jar.
 - Integration tests cover byte-exact segmented download and resume from persisted state (2 tests).
-- Test suite: 28 unit tests + 2 integration tests passing locally.
-- Local verification on Windows: `cargo build`, `cargo test --all-targets` (30 passed),
+- Test suite: 33 unit tests + 2 integration tests, including a TUI buffer-render smoke test.
+- Local verification on Windows: `cargo build`, `cargo test --all-targets` (35 passed),
   `cargo clippy --all-targets -- -D warnings`, `cargo fmt --all` applied cleanly.
 - CI workflow (fmt/build/test/clippy on Ubuntu + Windows) and release workflow
   (Windows/Linux x86_64 binaries) added under `.github/workflows/`.

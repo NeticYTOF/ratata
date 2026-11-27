@@ -226,6 +226,8 @@ pub struct JobProgress {
     pub speed: f64,
     pub state: JobState,
     pub error: Option<String>,
+    pub segments: Vec<bool>,
+    pub eta: Option<f64>,
 }
 
 impl JobProgress {

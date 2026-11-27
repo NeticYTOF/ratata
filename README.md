@@ -108,7 +108,10 @@ curl (and aria2c/yt-dlp when installed).
 - `j` / `k` or arrows: select a job
 - `t`: cycle themes (`blossom`, `aurora`, `ember`)
 
-The UI enables virtual-terminal processing on Windows consoles through crossterm.
+The tunnel runs at 60fps; its speed follows measured throughput and flowers open
+as progress rises. Job bars show speed, ETA and a segment map. Truecolor is used
+when available, with 256-color and `NO_COLOR` fallbacks. The UI enables virtual
+terminal processing on Windows consoles through crossterm and redraws only diffs.
 
 ## Config
 

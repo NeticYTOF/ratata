@@ -143,6 +143,8 @@ impl DownloadManager {
             speed: 0.0,
             state: final_state,
             error,
+            segments: Vec::new(),
+            eta: None,
         });
         result
     }

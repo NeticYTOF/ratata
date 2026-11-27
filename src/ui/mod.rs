@@ -75,6 +75,7 @@ struct App {
     started: Instant,
     finished: Option<Instant>,
     total_speed: f64,
+    color_mode: theme::ColorMode,
 }
 
 impl App {
@@ -86,7 +87,7 @@ impl App {
     ) -> Result<()> {
         let mut app = Self::new(jobs);
         let mut events = EventStream::new();
-        let mut timer = tokio::time::interval(Duration::from_millis(33));
+        let mut timer = tokio::time::interval(Duration::from_millis(16));
         while app.finished.is_none()
             || app
                 .finished
@@ -121,6 +122,8 @@ impl App {
                         speed: 0.0,
                         state: JobState::Queued,
                         error: None,
+                        segments: Vec::new(),
+                        eta: None,
                     },
                 )
             })
@@ -136,6 +139,7 @@ impl App {
             started: Instant::now(),
             finished: None,
             total_speed: 0.0,
+            color_mode: theme::ColorMode::from_env(),
         }
     }
 
@@ -187,7 +191,11 @@ impl App {
 
     fn update(&mut self, progress: JobProgress) {
         if let Some(current) = self.progress.get_mut(&progress.id) {
-            *current = progress;
+            let mut incoming = progress;
+            if incoming.segments.is_empty() {
+                incoming.segments = current.segments.clone();
+            }
+            *current = incoming;
         }
         let all_final = self.progress.values().all(|p| {
             matches!(
@@ -202,7 +210,7 @@ impl App {
     }
 
     fn draw(&mut self, frame: &mut ratatui::Frame) {
-        let palette = theme::palette(self.themes[self.theme]);
+        let palette = theme::palette(self.themes[self.theme], self.color_mode);
         let area = frame.area();
         let chunks = Layout::vertical([
             Constraint::Length(3),
@@ -238,13 +246,28 @@ impl App {
             .title_style(Style::default().fg(palette.text).bold());
         let inner = tunnel_block.inner(body[0]);
         frame.render_widget(tunnel_block, body[0]);
-        let energy = self
+        let active = self
             .progress
             .values()
             .filter(|p| p.state == JobState::Running)
             .count() as f64
             / self.progress.len().max(1) as f64;
-        tunnel::draw(frame.buffer_mut(), inner, &palette, self.tick, energy);
+        let flow = (self.total_speed / 20_000_000.0).clamp(0.0, 1.0);
+        let energy = (active * 0.35 + flow * 0.65).clamp(0.0, 1.0);
+        let blooming = self
+            .progress
+            .values()
+            .map(JobProgress::fraction)
+            .sum::<f64>()
+            / self.progress.len().max(1) as f64;
+        tunnel::draw(
+            frame.buffer_mut(),
+            inner,
+            &palette,
+            self.tick,
+            energy,
+            blooming,
+        );
 
         let jobs_block = Block::default()
             .borders(Borders::ALL)
@@ -354,11 +377,13 @@ impl App {
         width: usize,
         palette: &theme::Palette,
     ) -> Line<'static> {
-        let inner = width.saturating_sub(2).min(80);
-        let filled = (progress.fraction() * inner as f64) as usize;
-        let mut bar = String::with_capacity(inner + 2);
+        let inner = width.saturating_sub(2).min(100);
+        let map_count = progress.segments.len().min(16);
+        let bar_width = inner.saturating_sub(map_count + 26).clamp(8, 60);
+        let filled = (progress.fraction() * bar_width as f64) as usize;
+        let mut bar = String::with_capacity(bar_width + 2);
         bar.push('╭');
-        for index in 0..inner {
+        for index in 0..bar_width {
             if index < filled {
                 bar.push(if index % 5 == 0 { '✿' } else { '─' });
             } else if index == filled && progress.state == JobState::Running {
@@ -368,10 +393,37 @@ impl App {
             }
         }
         bar.push('╯');
+        let map: String = progress
+            .segments
+            .iter()
+            .take(16)
+            .map(|done| if *done { '✿' } else { '·' })
+            .collect();
+        let suffix = format!(
+            "{} {} {}",
+            human_speed(progress.speed),
+            progress.eta.map(format_eta).unwrap_or_default(),
+            if map.is_empty() {
+                String::new()
+            } else {
+                format!("[{map}]")
+            }
+        );
         Line::from(Span::styled(
-            format!("  {bar}  {}", human_speed(progress.speed)),
+            format!("  {bar}  {suffix}"),
             Style::default().fg(palette.accent),
         ))
+    }
+}
+
+fn format_eta(seconds: f64) -> String {
+    let seconds = seconds.round().max(0.0) as u64;
+    if seconds < 60 {
+        format!("{seconds}s")
+    } else if seconds < 3600 {
+        format!("{}m{:02}s", seconds / 60, seconds % 60)
+    } else {
+        format!("{}h{:02}m", seconds / 3600, (seconds % 3600) / 60)
     }
 }
 
@@ -384,5 +436,50 @@ fn truncate(value: &str, max: usize) -> String {
         format!("{chars}…")
     } else {
         chars
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Media;
+    use ratatui::backend::TestBackend;
+    use ratatui::buffer::Buffer;
+
+    #[test]
+    fn renders_flower_tunnel_with_progress_and_segment_map() {
+        let job = DownloadJob {
+            id: 0,
+            media: Media::new("test", "https://example.test/clip", "Bloom clip"),
+            format: crate::MediaFormat::new(
+                "f1",
+                "https://example.test/clip.mp4",
+                crate::MediaKind::Video,
+            ),
+            destination: std::path::PathBuf::from("clip.mp4"),
+        };
+        let mut app = App::new(vec![job]);
+        app.update(JobProgress {
+            id: 0,
+            label: "Bloom clip".into(),
+            downloaded: 50,
+            total: Some(100),
+            speed: 12_000_000.0,
+            state: JobState::Running,
+            error: None,
+            segments: vec![true, false],
+            eta: Some(42.0),
+        });
+        let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
+        terminal.draw(|frame| app.draw(frame)).unwrap();
+        let buffer: &Buffer = terminal.backend().buffer();
+        let rendered: String = buffer.content.iter().map(|cell| cell.symbol()).collect();
+        assert!(rendered.contains('✿'), "no petals rendered");
+        assert!(rendered.contains('╭'), "no progress bar rendered");
+        assert!(
+            rendered.contains('4') && rendered.contains('2'),
+            "ETA not rendered"
+        );
+        assert!(rendered.contains('R'), "no header rendered");
     }
 }
