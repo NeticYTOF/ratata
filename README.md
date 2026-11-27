@@ -7,7 +7,8 @@ progress screen. No account or API key needed.
 ## Install
 
 Download a ready-made binary from [Releases](https://github.com/NeticYTOF/ratata/releases)
-(Windows and Linux x86_64), or install from source with Rust:
+(Windows x86_64 zip, Linux x86_64 static musl tar.gz — works on older glibc distros),
+or install from source with Rust:
 
 ```sh
 cargo install --git https://github.com/NeticYTOF/ratata
