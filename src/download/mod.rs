@@ -5,12 +5,15 @@ pub mod state;
 use crate::config::Config;
 use crate::model::{DownloadJob, JobProgress, JobState, ManifestKind};
 use anyhow::{Result, bail};
+use parking_lot::Mutex;
 use reqwest::Client;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use tokio::sync::{Semaphore, mpsc};
 use tokio::task::JoinHandle;
+use url::Url;
 
 pub struct DownloadManager {
     pub config: Config,
@@ -20,6 +23,7 @@ pub struct DownloadManager {
     pub cancel: Arc<AtomicBool>,
     pub average_speed: Arc<AtomicU64>,
     global: Arc<Semaphore>,
+    host_limits: Mutex<HashMap<String, Arc<Semaphore>>>,
 }
 
 #[derive(Clone)]
@@ -60,6 +64,7 @@ impl DownloadManager {
             cancel: Arc::new(AtomicBool::new(false)),
             average_speed: Arc::new(AtomicU64::new(0)),
             global,
+            host_limits: Mutex::new(HashMap::new()),
         }
     }
 
@@ -87,6 +92,20 @@ impl DownloadManager {
     pub async fn download(&self, job: DownloadJob) -> Result<std::path::PathBuf> {
         let started = Instant::now();
         let _permit = self.global.acquire().await?;
+        let host = Url::parse(&job.format.url)
+            .ok()
+            .and_then(|url| url.host_str().map(str::to_owned))
+            .unwrap_or_default();
+        let host_limit = {
+            let mut limits = self.host_limits.lock();
+            limits
+                .entry(host)
+                .or_insert_with(|| {
+                    Arc::new(Semaphore::new(self.config.concurrent_downloads.max(1)))
+                })
+                .clone()
+        };
+        let _host_permit = host_limit.acquire().await?;
         let total = job.format.size;
         let tracker =
             progress::ProgressTracker::new(self.tx.clone(), job.id, job.media.title.clone(), total);

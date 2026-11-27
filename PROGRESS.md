@@ -23,6 +23,35 @@ Updated: 2026-11-27
 - CI workflow (fmt/build/test/clippy on Ubuntu + Windows) and release workflow
   (Windows/Linux x86_64 binaries) added under `.github/workflows/`.
 
+## Speed benchmarks (`scripts/bench.py`, Windows, release build)
+
+First run (single pass, 128 MiB local Range server + real MDN CDN file):
+
+| Tool | MB/s |
+| --- | ---: |
+| ratata 2 segments | 589.2 |
+| ratata 8 segments | 472.4 |
+| ratata 16 segments | 546.2 |
+| curl (local) | 335.1 |
+| ratata remote CDN | 1.6 |
+| curl remote CDN | 2.1 |
+
+After adaptive segment sizing, per-host concurrency limits and range fallback
+(3-run median):
+
+| Tool | Median MB/s |
+| --- | ---: |
+| ratata 2 segments | 639.5 |
+| ratata 8 segments | 690.6 |
+| ratata 16 segments | 596.8 |
+| ratata 32 segments | 537.5 |
+| curl (local) | 374.7 |
+| ratata remote CDN | 3.0 |
+| curl remote CDN | 4.0 |
+
+Caveat: loopback and CDN measurements are noisy; the script uses medians to
+reduce it. aria2c and yt-dlp were not installed, so they were skipped.
+
 ## Left
 - Continuous commit/push and PROGRESS.md updates.
 

@@ -93,6 +93,14 @@ sent only to their matching domains.
   parallel; AES-128 HLS keys and fMP4 init segments are handled. TS playlists are
   remuxed to MP4 when `ffmpeg` is on PATH.
 
+```sh
+python scripts/bench.py --ratata target/release/ratata.exe --repeat 3 --remote
+```
+
+The benchmark serves a 128 MiB Range-capable payload locally, verifies every
+download byte-for-byte, and reports median MB/s for several segment counts plus
+curl (and aria2c/yt-dlp when installed).
+
 ## Terminal UI
 
 - `q` / `Esc`: cancel and quit

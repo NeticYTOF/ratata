@@ -43,6 +43,10 @@ impl ProgressTracker {
         self.inner.downloaded.fetch_add(bytes, Ordering::Relaxed);
     }
 
+    pub fn reset(&self) {
+        self.inner.downloaded.store(0, Ordering::Relaxed);
+    }
+
     pub fn downloaded(&self) -> u64 {
         self.inner.downloaded.load(Ordering::Relaxed)
     }

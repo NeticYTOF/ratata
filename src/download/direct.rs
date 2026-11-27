@@ -104,6 +104,13 @@ pub async fn download(
         }
     }
     if !failures.is_empty() {
+        if count > 1 {
+            // Some origins break under parallel ranges. Retry once as a single stream.
+            tokio::fs::remove_file(&part).await.ok();
+            tokio::fs::remove_file(&state_file).await.ok();
+            tracker.reset();
+            return stream_single(manager, job, tracker, Some(total)).await;
+        }
         bail!("segment failures: {}", failures.join("; "));
     }
     let written = tokio::fs::metadata(&part).await?.len();
@@ -121,20 +128,23 @@ pub async fn download(
 }
 
 fn target_segment_bytes(manager: &DownloadManager, total: u64, job: &DownloadJob) -> u64 {
-    if let Some(size) = job.format.size {
-        let count = manager.config.segments.clamp(1, 64) as u64;
-        return size
-            .div_ceil(count)
-            .max(manager.config.min_segment_size)
-            .max(1);
-    }
-    // Without a declared size, use the observed connection quality to pick chunks.
     let observed = manager
         .average_speed
         .load(std::sync::atomic::Ordering::Relaxed);
-    let per_second = observed.max(1);
-    (per_second / 4)
-        .clamp(manager.config.min_segment_size, 16 * 1024 * 1024)
+    if observed > 0 {
+        // Aim for ~200 ms per segment: enough to keep sockets busy without
+        // creating so many ranges that the origin throttles us.
+        return (observed / 5)
+            .clamp(manager.config.min_segment_size, 64 * 1024 * 1024)
+            .min(total.max(1));
+    }
+    let size = job
+        .format
+        .size
+        .unwrap_or(total)
+        .div_ceil(manager.config.segments.clamp(1, 64) as u64);
+    size.max(manager.config.min_segment_size)
+        .max(1)
         .min(total.max(1))
 }
 
