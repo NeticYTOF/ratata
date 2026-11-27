@@ -65,12 +65,17 @@ fn draw_header(app: &App, frame: &mut Frame, area: Rect, palette: &theme::Palett
     ]);
 
     let elapsed = app.started.elapsed().as_secs();
-    let flow = human_speed(app.total_speed);
     let average = human_speed(app.average_speed());
+    let flow = if app.phase == Phase::Summary {
+        average.clone()
+    } else {
+        human_speed(app.total_speed)
+    };
     let total = human_bytes(app.total_bytes);
     let width = area.width.saturating_sub(2) as usize;
     let gauge_width = width.saturating_sub(58).clamp(8, 28);
-    let filled = ((app.total_speed / 24_000_000.0).clamp(0.0, 1.0) * gauge_width as f64) as usize;
+    let effective = if app.phase == Phase::Summary { app.average_speed() } else { app.total_speed };
+    let filled = ((effective / 24_000_000.0).clamp(0.0, 1.0) * gauge_width as f64) as usize;
     let gauge: String = (0..gauge_width)
         .map(|i| if i < filled { '━' } else { '·' })
         .collect();
