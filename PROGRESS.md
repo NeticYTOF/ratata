@@ -12,18 +12,16 @@ Updated: 2026-11-27
   TikTok, Reddit, Vimeo, generic HTML/direct URLs (og tags, JSON-LD, media elements).
 - Flower-tunnel TUI: animated perspective rings, flowers, theme cycling, live job bars,
   keyboard controls (q/p/space/j/k/t), plain ANSI progress mode for scripts.
-- Media support: HLS master/media playlists with AES-128 decryption, DASH MPD segments,
-  parallel playlist segment fetch, TS remux when ffmpeg is available.
+- More platforms: SoundCloud, Dailymotion, Twitch clips, Streamable, Imgur, Pinterest.
+- End-to-end smoke run passed: 3.3 MB segmented local download, SHA-256 identical.
 - Cross-platform: no hardcoded separators, `std::path`, Windows VT enabled via crossterm.
-- Local verification on Windows: `cargo build`, `cargo test --all-targets` (18 passed),
+- Local verification on Windows: `cargo build`, `cargo test --all-targets` (24 passed),
   `cargo clippy --all-targets -- -D warnings`, `cargo fmt --all` applied cleanly.
 - CI workflow (fmt/build/test/clippy on Ubuntu + Windows) and release workflow
   (Windows/Linux x86_64 binaries) added under `.github/workflows/`.
 
 ## Left
-- End-to-end smoke run of the CLI against a local range-capable HTTP server.
 - README with install, usage, platform support and configuration reference.
-- More platforms (SoundCloud, Dailymotion, Twitch clips, Streamable, Imgur, Pinterest).
 - Speed work: adaptive segment sizing, persistent connection warm-up, streaming assembly.
 - TUI polish: more animation phases, error detail panel, multi-file gallery handling.
 - Continuous commit/push and PROGRESS.md updates.

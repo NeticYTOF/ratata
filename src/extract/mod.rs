@@ -1,7 +1,12 @@
+pub mod dailymotion;
+pub mod galleries;
 pub mod generic;
 pub mod instagram;
 pub mod reddit;
+pub mod soundcloud;
+pub mod streamable;
 pub mod tiktok;
+pub mod twitch;
 pub mod twitter;
 pub mod vimeo;
 pub mod youtube;
@@ -39,6 +44,24 @@ pub async fn extract(url: &str, client: &Client, config: &Config) -> Result<Medi
     }
     if host == "vimeo.com" || host == "player.vimeo.com" {
         return vimeo::extract(&parsed, client).await;
+    }
+    if host == "dailymotion.com" || host == "dai.ly" {
+        return dailymotion::extract(&parsed, client).await;
+    }
+    if host == "streamable.com" {
+        return streamable::extract(&parsed, client).await;
+    }
+    if host.ends_with("twitch.tv") {
+        return twitch::extract(&parsed, client).await;
+    }
+    if host == "soundcloud.com" || host.ends_with(".soundcloud.com") {
+        return soundcloud::extract(&parsed, client).await;
+    }
+    if host == "imgur.com" || host.ends_with(".imgur.com") {
+        return galleries::imgur(&parsed, client).await;
+    }
+    if host == "pinterest.com" || host.ends_with(".pinterest.com") {
+        return galleries::pinterest(&parsed, client).await;
     }
     generic::extract(&parsed, client).await
 }
