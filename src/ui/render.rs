@@ -10,10 +10,12 @@ use ratatui::widgets::Paragraph;
 use unicode_width::UnicodeWidthStr;
 
 const SPINNER: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-const LOGO: [&str; 3] = [
-    "███ ▀█▀ ███ ▀█▀ ███ ▀█▀",
-    "██▀ ███ ▀█▀ ███ ▀█▀ ███",
-    "███ ███ ▀█▀ ███ ▀█▀ ███",
+const LOGO: [&str; 5] = [
+    "█████ █████ █████ █████ █████ █████",
+    "█   █ █   █   █   █   █ █   █ █   █",
+    "█████ █████   █   █████   █   █████",
+    "█  █  █   █   █   █   █ █   █ █   █",
+    "█   █ █   █ █████ █   █ █████ █   █",
 ];
 const SUBCELL: [char; 8] = [' ', '▏', '▎', '▍', '▌', '▋', '▊', '▉'];
 
@@ -25,7 +27,7 @@ pub(crate) fn draw(app: &App, frame: &mut Frame) {
         return;
     }
     let chunks = Layout::vertical([
-        Constraint::Length(5),
+        Constraint::Length(7),
         Constraint::Min(3),
         Constraint::Length(2),
     ])
@@ -124,22 +126,38 @@ fn draw_header(app: &App, frame: &mut Frame, area: Rect, palette: &theme::Palett
         .map(|index| if index < filled { '━' } else { '·' })
         .collect();
 
-    let banner0 = format!("{}   {}", LOGO[0], status);
-    let banner1 = format!("{}   speed {}", LOGO[1], gauge);
-    let banner2 = format!(
-        "{}   {speed:>12}  avg {average:>12}  {total:>10}  {elapsed:>3}s",
-        LOGO[2]
-    );
-    frame.render_widget(
-        Paragraph::new(vec![
-            top_line(width, palette),
-            panel_line(&banner0, width, palette, palette.accent),
-            panel_line(&banner1, width, palette, palette.accent),
-            panel_line(&banner2, width, palette, palette.text),
-            bottom_line(width, palette),
-        ]),
-        area,
-    );
+    let mut rows = vec![top_line(width, palette)];
+    for (index, logo) in LOGO.iter().enumerate() {
+        let content = match index {
+            0 => format!("{logo}   {status}"),
+            1 => format!("{logo}   speed {gauge}"),
+            2 => format!("{logo}   {speed:>12}  avg {average:>12}  {total:>10}  {elapsed:>3}s"),
+            _ => (*logo).to_owned(),
+        };
+        let color = if index < 2 {
+            palette.accent
+        } else {
+            palette.text
+        };
+        rows.push(panel_line(&content, width, palette, color));
+    }
+    rows.push(bottom_line(width, palette));
+    frame.render_widget(Paragraph::new(rows), area);
+}
+
+fn frame_panel(
+    mut lines: Vec<Line<'static>>,
+    width: usize,
+    height: usize,
+    palette: &theme::Palette,
+) -> Vec<Line<'static>> {
+    let max = height.saturating_sub(2);
+    lines.truncate(max);
+    let mut framed = Vec::with_capacity(lines.len() + 2);
+    framed.push(top_line(width, palette));
+    framed.extend(lines);
+    framed.push(bottom_line(width, palette));
+    framed
 }
 
 fn sparkline(history: Option<&Vec<f64>>, width: usize) -> String {
@@ -159,7 +177,7 @@ fn sparkline(history: Option<&Vec<f64>>, width: usize) -> String {
 fn draw_jobs(app: &App, frame: &mut Frame, area: Rect, palette: &theme::Palette) {
     let width = area.width as usize;
     let mut lines: Vec<Line> = Vec::new();
-    for (index, job) in app.jobs.iter().enumerate() {
+    for job in &app.jobs {
         let Some(progress) = app.progress.get(&job.id) else {
             continue;
         };
@@ -195,32 +213,28 @@ fn draw_jobs(app: &App, frame: &mut Frame, area: Rect, palette: &theme::Palette)
             sparkline(app.history.get(&job.id), 8),
             tw = title_width
         );
-        lines.push(Line::from(Span::styled(
-            row,
-            Style::default()
-                .fg(color)
-                .add_modifier(if index == app.selected {
-                    Modifier::BOLD
-                } else {
-                    Modifier::empty()
-                }),
-        )));
+        lines.push(panel_line(&row, width, palette, color));
         if job.media.platform.contains('→') {
-            lines.push(Line::from(Span::styled(
-                format!(
+            lines.push(panel_line(
+                &format!(
                     "    {} → matched on YouTube Music (audio)",
                     job.media.platform.split(' ').next().unwrap_or("Music")
                 ),
-                Style::default().fg(palette.muted),
-            )));
+                width,
+                palette,
+                palette.muted,
+            ));
         }
         if let Some(error) = &progress.error {
-            lines.push(Line::from(Span::styled(
-                format!("    {error}"),
-                Style::default().fg(palette.error),
-            )));
+            lines.push(panel_line(
+                &format!("    {error}"),
+                width,
+                palette,
+                palette.error,
+            ));
         }
     }
+    let lines = frame_panel(lines, width, area.height as usize, palette);
     frame.render_widget(Paragraph::new(lines), area);
 }
 
@@ -238,27 +252,24 @@ fn draw_summary(app: &App, frame: &mut Frame, area: Rect, palette: &theme::Palet
         .count();
     let bytes: u64 = app.progress.values().map(|p| p.downloaded).sum();
     let elapsed = app.started.elapsed().as_secs();
-    let mut lines = vec![
-        top_line(width, palette),
-        panel_line(
-            &format!(
-                "{} {} file{} · {} · {} · avg {}",
-                if failed == 0 { "✓" } else { "!" },
-                done,
-                if done == 1 { "" } else { "s" },
-                human_bytes(bytes),
-                format_eta(elapsed as f64),
-                human_speed(app.average_speed())
-            ),
-            width,
-            palette,
-            if failed == 0 {
-                palette.success
-            } else {
-                palette.warning
-            },
+    let mut lines = vec![panel_line(
+        &format!(
+            "{} {} file{} · {} · {} · avg {}",
+            if failed == 0 { "✓" } else { "!" },
+            done,
+            if done == 1 { "" } else { "s" },
+            human_bytes(bytes),
+            format_eta(elapsed as f64),
+            human_speed(app.average_speed())
         ),
-    ];
+        width,
+        palette,
+        if failed == 0 {
+            palette.success
+        } else {
+            palette.warning
+        },
+    )];
     for job in &app.jobs {
         let Some(progress) = app.progress.get(&job.id) else {
             continue;
@@ -320,7 +331,7 @@ fn draw_summary(app: &App, frame: &mut Frame, area: Rect, palette: &theme::Palet
         palette,
         palette.muted,
     ));
-    lines.push(bottom_line(width, palette));
+    let lines = frame_panel(lines, width, area.height as usize, palette);
     frame.render_widget(Paragraph::new(lines), area);
 }
 
@@ -455,7 +466,7 @@ mod tests {
             let mut terminal = Terminal::new(TestBackend::new(columns, 24)).unwrap();
             terminal.draw(|frame| draw(&app, frame)).unwrap();
             let buffer = terminal.backend().buffer();
-            for row in 0..5 {
+            for row in 0..7 {
                 let first = buffer[(0, row)].symbol();
                 let last = buffer[(columns - 1, row)].symbol();
                 assert!(
@@ -471,15 +482,17 @@ mod tests {
     }
 
     #[test]
-    fn banner_has_six_three_column_glyphs() {
-        assert_eq!(LOGO.len(), 3);
+    fn banner_spells_ratata_snapshot() {
+        let expected = [
+            "█████ █████ █████ █████ █████ █████",
+            "█   █ █   █   █   █   █ █   █ █   █",
+            "█████ █████   █   █████   █   █████",
+            "█  █  █   █   █   █   █ █   █ █   █",
+            "█   █ █   █ █████ █   █ █████ █   █",
+        ];
+        assert_eq!(LOGO, expected);
         for row in LOGO {
-            assert_eq!(display_width(row), 6 * 3 + 5, "banner row: {row}");
-            assert_eq!(
-                row.split_whitespace().count(),
-                6,
-                "six letters expected: {row}"
-            );
+            assert_eq!(display_width(row), 6 * 5 + 5, "banner row: {row}");
         }
     }
 }

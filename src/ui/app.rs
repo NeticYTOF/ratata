@@ -241,10 +241,7 @@ mod tests {
         terminal.draw(|frame| render::draw(&app, frame)).unwrap();
         let buffer: &Buffer = terminal.backend().buffer();
         let rendered: String = buffer.content.iter().map(|cell| cell.symbol()).collect();
-        assert!(
-            rendered.contains('▀') && rendered.contains('█'),
-            "logo not rendered"
-        );
+        assert!(rendered.contains('█'), "logo not rendered");
         assert!(rendered.contains("YT"));
         assert!(rendered.contains("Bloom clip"));
         assert!(rendered.contains("50.0") || rendered.contains("MiB"));
