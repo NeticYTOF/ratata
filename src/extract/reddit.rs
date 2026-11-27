@@ -8,11 +8,25 @@ use url::Url;
 
 pub async fn extract(url: &Url, client: &Client) -> Result<Media> {
     let id = post_id(url)?;
-    let endpoint = format!("https://www.reddit.com/comments/{id}.json?raw_json=1");
     let headers = browser_headers("https://www.reddit.com/");
-    let json = get_json(client, &endpoint, &headers).await?;
-    parse_listing(&json, url, &id)
-        .ok_or_else(|| RatataError::Extraction(format!("no media in Reddit post {id}")).into())
+    let endpoints = [
+        format!("https://www.reddit.com/comments/{id}.json?raw_json=1"),
+        format!("https://api.reddit.com/comments/{id}?raw_json=1"),
+        format!("https://old.reddit.com/comments/{id}.json?raw_json=1"),
+    ];
+    let mut last_error = String::new();
+    for endpoint in endpoints {
+        match get_json(client, &endpoint, &headers).await {
+            Ok(json) => {
+                if let Some(media) = parse_listing(&json, url, &id) {
+                    return Ok(media);
+                }
+                last_error = "no media in response".into();
+            }
+            Err(error) => last_error = error.to_string(),
+        }
+    }
+    Err(RatataError::Extraction(format!("Reddit post {id}: {last_error}")).into())
 }
 
 fn post_id(url: &Url) -> Result<String> {
