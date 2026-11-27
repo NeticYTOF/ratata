@@ -1,0 +1,41 @@
+[package]
+name = "ratata"
+version = "0.1.0"
+edition = "2024"
+description = "Fast, beautiful terminal downloader for social media video, images and assets"
+license = "MIT"
+repository = "https://github.com/NeticYTOF/ratata"
+
+[dependencies]
+aes = "0.8"
+anyhow = "1"
+base64 = "0.22"
+bytes = "1"
+cbc = { version = "0.8", features = ["block-padding"] }
+clap = { version = "4", features = ["derive"] }
+crossterm = { version = "0.28", features = ["event-stream"] }
+futures-util = "0.3"
+md-5 = "0.10"
+parking_lot = "0.12"
+percent-encoding = "2"
+ratatui = "0.29"
+regex = "1"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream", "gzip", "brotli", "deflate"] }
+scraper = "0.23"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7"
+toml = "0.8"
+url = "2"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"

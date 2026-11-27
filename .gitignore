@@ -1,0 +1,4 @@
+/target/
+*.part
+*.ratata.json
+.DS_Store

@@ -1,0 +1,39 @@
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum RatataError {
+    #[error("HTTP {0}")]
+    Http(#[from] reqwest::Error),
+    #[error("unsupported URL: {0}")]
+    UnsupportedUrl(String),
+    #[error("no media formats found for {0}")]
+    NoFormats(String),
+    #[error("format not found: {0}")]
+    FormatNotFound(String),
+    #[error("download incomplete: {0}")]
+    Incomplete(String),
+    #[error("extraction failed: {0}")]
+    Extraction(String),
+}
+
+pub fn sanitize_filename(name: &str) -> String {
+    let cleaned: String = name
+        .chars()
+        .map(|c| match c {
+            '<' | '>' | ':' | '"' | '|' | '?' | '*' | '\n' | '\r' | '\t' => '_',
+            c if c.is_control() => '_',
+            c => c,
+        })
+        .collect();
+    let trimmed = cleaned.trim().trim_matches('.');
+    let trimmed = if trimmed.is_empty() {
+        "ratata-download"
+    } else {
+        trimmed
+    };
+    if trimmed.chars().count() > 140 {
+        trimmed.chars().take(140).collect()
+    } else {
+        trimmed.to_owned()
+    }
+}
