@@ -1,8 +1,9 @@
 use anyhow::{Context, Result, anyhow};
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 use ratata::{
     Config, DownloadJob, Media, MediaFormat, MediaKind, download, extract, http, sanitize_filename,
 };
+use std::io::{self, IsTerminal, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -10,52 +11,75 @@ use std::sync::Arc;
 #[command(
     name = "ratata",
     version,
-    about = "Blossom-fast terminal downloader for social media"
+    about = "Download videos, audio and images from social sites — fast and simple.",
+    after_help = "Examples:\n  ratata https://www.youtube.com/watch?v=...\n  ratata https://www.instagram.com/reel/...\n  ratata info https://vimeo.com/...\n\nRun ratata --help-all for advanced options."
 )]
 struct Cli {
+    /// Optional command; omit it to download the URLs you pass.
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 
-    #[arg(short, long, global = true, help = "Output directory or file")]
+    /// URLs to download
+    urls: Vec<String>,
+
+    /// Show every advanced option
+    #[arg(long, global = true)]
+    help_all: bool,
+
+    /// Save into this folder or file
+    #[arg(short, long, global = true)]
     output: Option<String>,
-    #[arg(short, long, global = true, help = "Format id, or best/worst")]
+
+    /// Choose a specific format
+    #[arg(short, long, global = true, hide = true)]
     format: Option<String>,
-    #[arg(long, global = true, help = "Disable the flower-tunnel UI")]
+
+    /// Turn off the progress screen
+    #[arg(long, global = true, hide = true)]
     no_tui: bool,
-    #[arg(long, global = true, help = "Parallel HTTP connections per file")]
+
+    /// Connections per file
+    #[arg(long, global = true, hide = true)]
     segments: Option<usize>,
-    #[arg(long, global = true, help = "Retry attempts per segment")]
+
+    /// Retries per connection
+    #[arg(long, global = true, hide = true)]
     retries: Option<u8>,
-    #[arg(long, global = true, help = "Pick audio only")]
+
+    /// Audio only
+    #[arg(long, global = true, hide = true)]
     audio_only: bool,
-    #[arg(long, global = true, help = "List formats instead of downloading")]
+
+    /// List what is available
+    #[arg(long, global = true, hide = true)]
     list_formats: bool,
-    #[arg(
-        long,
-        global = true,
-        help = "Download every available format (galleries)"
-    )]
+
+    /// Download every quality or image
+    #[arg(long, global = true, hide = true)]
     all_formats: bool,
-    #[arg(long, global = true, help = "Load Netscape cookies for private media")]
+
+    /// Netscape cookie file for private posts
+    #[arg(long, global = true, hide = true)]
     cookies: Option<String>,
-    #[arg(long, global = true, help = "Overwrite existing files")]
+
+    /// Replace files with the same name
+    #[arg(long, global = true, hide = true)]
     overwrite: bool,
-    #[arg(long, global = true, help = "Verbose diagnostics")]
+
+    /// Extra diagnostics
+    #[arg(long, global = true, hide = true)]
     verbose: bool,
 }
 
 #[derive(Subcommand, Debug)]
 enum Command {
-    #[command(alias = "dl", alias = "get")]
-    Download {
-        urls: Vec<String>,
-    },
-    Info {
-        url: String,
-    },
-    Formats {
-        url: String,
-    },
+    #[command(alias = "dl", alias = "get", about = "Download one or more URLs")]
+    Download { urls: Vec<String> },
+    #[command(about = "Show details and available formats for a URL")]
+    Info { url: String },
+    #[command(about = "List available formats for a URL")]
+    Formats { url: String },
+    #[command(about = "Manage saved settings")]
     Config {
         #[command(subcommand)]
         action: ConfigAction,
@@ -70,9 +94,36 @@ enum ConfigAction {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() {
+    if let Err(error) = run().await {
+        eprintln!("\n{}", friendly_error(&error));
+        std::process::exit(1);
+    }
+}
+
+async fn run() -> Result<()> {
     let cli = Cli::parse();
-    let mut config = Config::load().context("loading configuration")?;
+    if cli.help_all {
+        let mut command = Cli::command();
+        for name in [
+            "format",
+            "no-tui",
+            "segments",
+            "retries",
+            "audio-only",
+            "list-formats",
+            "all-formats",
+            "cookies",
+            "overwrite",
+            "verbose",
+        ] {
+            command = command.mut_arg(name, |arg| arg.hide(false));
+        }
+        command.print_help()?;
+        return Ok(());
+    }
+
+    let mut config = Config::load().context("Loading your saved settings failed")?;
     if let Some(n) = cli.segments {
         config.segments = n.clamp(1, 64);
     }
@@ -96,86 +147,119 @@ async fn main() -> Result<()> {
         );
     }
 
+    let mut urls = Vec::new();
     match cli.command {
-        Command::Config { action } => {
+        Some(Command::Config { action }) => {
             match action {
                 ConfigAction::Show => println!("{}", toml::to_string_pretty(&config)?),
-                ConfigAction::Init => {
-                    let path = config.save()?;
-                    println!("Wrote {}", path.display());
-                }
+                ConfigAction::Init => println!("Saved settings to {}", config.save()?.display()),
                 ConfigAction::Path => println!("{}", Config::path()?.display()),
             }
             return Ok(());
         }
-        Command::Info { url } | Command::Formats { url } => {
+        Some(Command::Info { url }) | Some(Command::Formats { url }) => {
             let client = http::build_client(&config)?;
             let media = extract::extract(&url, &client, &config).await?;
             print_media(&media);
             return Ok(());
         }
-        Command::Download { urls } => {
-            if urls.is_empty() {
-                return Err(anyhow!("provide at least one URL"));
-            }
-            let client = http::build_client(&config)?;
-            let mut jobs = Vec::new();
-            let mut next_id = 0usize;
-            for url in urls.iter() {
-                let media = extract::extract(url, &client, &config).await?;
-                if cli.list_formats {
-                    print_media(&media);
-                    continue;
-                }
-                let choices: Vec<(MediaFormat, Option<String>)> = if cli.all_formats {
-                    media
-                        .formats
-                        .iter()
-                        .cloned()
-                        .map(|format| {
-                            let suffix = format!(
-                                "{}_{}",
-                                format.kind.label(),
-                                sanitize_filename(&format.id)
-                            );
-                            (format, Some(suffix))
-                        })
-                        .collect()
-                } else {
-                    vec![(
-                        choose_format(&media, cli.format.as_deref(), cli.audio_only)?,
-                        None,
-                    )]
-                };
-                for (format, suffix) in choices {
-                    let destination = destination_for(
-                        &media,
-                        &format,
-                        &config,
-                        cli.output.as_deref(),
-                        suffix.as_deref(),
-                    )?;
-                    jobs.push(DownloadJob {
-                        id: next_id,
-                        media: media.clone(),
-                        format,
-                        destination,
-                    });
-                    next_id += 1;
-                }
-            }
-            if jobs.is_empty() {
-                return Ok(());
-            }
-            let client = Arc::new(client);
-            if config.tui && !cli.no_tui {
-                ratata::ui::run(jobs, config, client).await?;
-            } else {
-                download::run_plain(jobs, &config, client).await?;
-            }
+        Some(Command::Download { urls: given }) => urls.extend(given),
+        None => urls.extend(cli.urls),
+    }
+
+    if urls.is_empty() {
+        if io::stdin().is_terminal() {
+            urls.push(prompt_url()?);
+        } else {
+            Cli::command().print_help()?;
+            return Ok(());
         }
     }
+
+    let client = http::build_client(&config)?;
+    let mut jobs = Vec::new();
+    let mut next_id = 0usize;
+    for url in urls.iter() {
+        let media = extract::extract(url, &client, &config).await?;
+        if cli.list_formats {
+            print_media(&media);
+            continue;
+        }
+        let choices: Vec<(MediaFormat, Option<String>)> = if cli.all_formats {
+            media
+                .formats
+                .iter()
+                .cloned()
+                .map(|format| {
+                    let suffix =
+                        format!("{}_{}", format.kind.label(), sanitize_filename(&format.id));
+                    (format, Some(suffix))
+                })
+                .collect()
+        } else {
+            vec![(
+                choose_format(&media, cli.format.as_deref(), cli.audio_only)?,
+                None,
+            )]
+        };
+        for (format, suffix) in choices {
+            let destination = destination_for(
+                &media,
+                &format,
+                &config,
+                cli.output.as_deref(),
+                suffix.as_deref(),
+            )?;
+            jobs.push(DownloadJob {
+                id: next_id,
+                media: media.clone(),
+                format,
+                destination,
+            });
+            next_id += 1;
+        }
+    }
+    if jobs.is_empty() {
+        return Ok(());
+    }
+    let client = Arc::new(client);
+    if config.tui && !cli.no_tui {
+        ratata::ui::run(jobs, config, client).await?;
+    } else {
+        download::run_plain(jobs, &config, client).await?;
+    }
     Ok(())
+}
+
+fn prompt_url() -> Result<String> {
+    print!("Paste a link to download: ");
+    io::stdout().flush()?;
+    let mut line = String::new();
+    io::stdin().read_line(&mut line)?;
+    let url = line.trim();
+    if url.is_empty() {
+        return Err(anyhow!(
+            "No link entered. Run ratata --help to see examples."
+        ));
+    }
+    Ok(url.to_owned())
+}
+
+fn friendly_error(error: &anyhow::Error) -> String {
+    let message = format!("{error:#}");
+    let lower = message.to_ascii_lowercase();
+    let suggestion = if lower.contains("unsupported url") {
+        "Check that the link is complete, or paste a direct media link such as .mp4 or .m3u8."
+    } else if lower.contains("no media formats") || lower.contains("no matching format") {
+        "The post may be private or restricted. Try ratata info LINK, or use --cookies with a cookie file."
+    } else if lower.contains("403") || lower.contains("401") || lower.contains("forbidden") {
+        "That site refused the request. Try again later, or pass --cookies cookies.txt if you are logged in."
+    } else if lower.contains("dns") || lower.contains("connect") || lower.contains("timed out") {
+        "Check your internet connection and try again."
+    } else {
+        "Run ratata --help for examples, or ratata --help-all for advanced options."
+    };
+    format!("Ratata hit a problem: {message}\n\nTry: {suggestion}")
 }
 
 fn choose_format(media: &Media, requested: Option<&str>, audio_only: bool) -> Result<MediaFormat> {
@@ -183,8 +267,7 @@ fn choose_format(media: &Media, requested: Option<&str>, audio_only: bool) -> Re
         media.best_audio().or_else(|| media.best_video())
     } else {
         match requested {
-            None => media.best_video().or_else(|| media.best_image()),
-            Some("best") => media.best_video().or_else(|| media.best_image()),
+            None | Some("best") => media.best_video().or_else(|| media.best_image()),
             Some("worst") => media
                 .formats
                 .iter()
@@ -195,7 +278,7 @@ fn choose_format(media: &Media, requested: Option<&str>, audio_only: bool) -> Re
     };
     chosen
         .cloned()
-        .ok_or_else(|| anyhow!("no matching format in {}", media.platform))
+        .ok_or_else(|| anyhow!("No matching format for this link"))
 }
 
 fn destination_for(
@@ -239,11 +322,11 @@ fn destination_for(
             return Ok(candidate);
         }
     }
-    Err(anyhow!("no free filename for {}", base.display()))
+    Err(anyhow!("No free filename for {}", base.display()))
 }
 
 fn print_media(media: &Media) {
-    println!("\n  ✿ {} — {}", media.platform, media.title);
+    println!("\n  {} — {}", media.platform, media.title);
     if let Some(author) = &media.author {
         println!("    by {author}");
     }

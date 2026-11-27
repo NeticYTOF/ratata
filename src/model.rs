@@ -207,11 +207,11 @@ pub enum JobState {
 impl JobState {
     pub fn glyph(self) -> &'static str {
         match self {
-            Self::Queued => "◇",
-            Self::Running => "✿",
-            Self::Paused => "❃",
-            Self::Done => "✽",
-            Self::Failed => "✖",
+            Self::Queued => "·",
+            Self::Running => "▸",
+            Self::Paused => "‖",
+            Self::Done => "✓",
+            Self::Failed => "✗",
             Self::Cancelled => "○",
         }
     }

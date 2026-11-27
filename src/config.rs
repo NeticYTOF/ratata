@@ -31,7 +31,7 @@ impl Default for Config {
             timeout_secs: 30,
             min_segment_size: 1_048_576,
             user_agent: concat!("ratata/", env!("CARGO_PKG_VERSION")).into(),
-            theme: "blossom".into(),
+            theme: "default".into(),
             tui: true,
             overwrite: false,
             proxy: None,

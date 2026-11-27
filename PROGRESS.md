@@ -12,10 +12,13 @@ Updated: 2026-11-27
 - Extractors: YouTube (Innertube + signature deciphering), Instagram, X/Twitter, TikTok,
   Reddit, Vimeo, Dailymotion, SoundCloud, Twitch, Streamable, Imgur, Pinterest, Bilibili,
   Kick, Facebook, generic HTML/direct URLs (og tags, JSON-LD, media elements).
-- Minimal cargo/uv-style TUI: aligned rows with platform badge, title, size, percent,
-  progress bar, measured speed and ETA; global gauge; clean summary; spinner; diffed
-  rendering; truecolor/256/no-color fallbacks. Flower/tunnel visuals removed.
+- Minimal CLI-style TUI: block logo, rounded panels, aligned rows with platform badge,
+  title, size, percent, sub-cell progress bar, measured speed and ETA; summary panel
+  stays open until a key is pressed; diffed rendering; truecolor/256/16/no-color support.
 - Speed readout fixed: rates are measured from byte deltas, not reporter ticks.
+- Friendly CLI: `ratata URL` downloads with sensible defaults, prompts for a link when
+  run with no arguments on a TTY, plain-language errors with suggested fixes, expert
+  flags hidden behind `--help-all`.
 - `--all-formats` downloads every available format as separate suffixed files (galleries).
 - `--cookies FILE` loads a Netscape cookie jar into a domain-scoped reqwest jar.
 - Integration tests cover byte-exact segmented download and resume from persisted state (2 tests).

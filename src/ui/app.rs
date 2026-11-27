@@ -29,6 +29,7 @@ pub(crate) struct App {
     pub(crate) message: String,
     pub(crate) started: Instant,
     pub(crate) finished: Option<Instant>,
+    pub(crate) finished_at: BTreeMap<usize, Instant>,
     pub(crate) phase: Phase,
     pub(crate) total_speed: f64,
     pub(crate) total_bytes: u64,
@@ -55,13 +56,6 @@ pub(crate) async fn run_screen(
                 }
             }
             Some(update) = rx.recv() => app.update(update),
-        }
-        if app.phase == Phase::Summary
-            && app
-                .finished
-                .is_some_and(|at| at.elapsed() > Duration::from_secs(8))
-        {
-            break;
         }
         terminal.draw(|frame| render::draw(&app, frame))?;
     }
@@ -106,6 +100,7 @@ impl App {
             message: "downloads underway".into(),
             started: Instant::now(),
             finished: None,
+            finished_at: BTreeMap::new(),
             phase: Phase::Running,
             total_speed: 0.0,
             total_bytes,
@@ -114,7 +109,8 @@ impl App {
 
     fn key(&mut self, code: KeyCode, manager: &Arc<DownloadManager>) -> bool {
         match code {
-            KeyCode::Enter if self.phase == Phase::Summary => true,
+            KeyCode::Enter | KeyCode::Char(' ') if self.phase == Phase::Summary => true,
+            KeyCode::Char(_) if self.phase == Phase::Summary => true,
             KeyCode::Char('q') | KeyCode::Esc => {
                 manager.cancel();
                 self.message = "cancelled".into();
@@ -183,11 +179,16 @@ impl App {
             }
             *current = incoming;
         }
-        if let Some(history) = self.history.get_mut(&progress.id) {
-            history.push(measured.max(progress.speed));
-            if history.len() > 36 {
-                history.remove(0);
-            }
+        if let Some(history) = self.history.get_mut(&progress.id)
+            && history.len() > 36
+        {
+            history.remove(0);
+        }
+        if matches!(
+            progress.state,
+            JobState::Done | JobState::Failed | JobState::Cancelled
+        ) {
+            self.finished_at.entry(progress.id).or_insert(now);
         }
         let all_final = self.progress.values().all(|p| {
             matches!(
@@ -240,7 +241,10 @@ mod tests {
         terminal.draw(|frame| render::draw(&app, frame)).unwrap();
         let buffer: &Buffer = terminal.backend().buffer();
         let rendered: String = buffer.content.iter().map(|cell| cell.symbol()).collect();
-        assert!(rendered.contains("ratata"));
+        assert!(
+            rendered.contains('▄') && rendered.contains('█'),
+            "logo not rendered"
+        );
         assert!(rendered.contains("YT"));
         assert!(rendered.contains("Bloom clip"));
         assert!(rendered.contains("50.0") || rendered.contains("MiB"));

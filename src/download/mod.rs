@@ -179,6 +179,7 @@ pub async fn run_plain(jobs: Vec<DownloadJob>, config: &Config, client: Arc<Clie
     use crossterm::execute;
     use crossterm::style::{Color, ResetColor, SetForegroundColor};
     use crossterm::terminal::{Clear, ClearType};
+    use std::collections::HashMap;
     use std::io::{Write, stdout};
 
     crate::ui::enable_color();
@@ -188,25 +189,48 @@ pub async fn run_plain(jobs: Vec<DownloadJob>, config: &Config, client: Arc<Clie
         (*client).clone(),
         Some(tx),
     ));
+    let count = jobs.len();
     let handles = manager.run_all(jobs);
-    let count = handles.len();
+    let started = Instant::now();
     let mut latest: Vec<JobProgress> = Vec::new();
+    let mut last_seen: HashMap<usize, (u64, Instant)> = HashMap::new();
     let mut rendered = 0usize;
     while latest.iter().filter(|p| is_final(p.state)).count() < count {
-        let Some(progress) = rx.recv().await else {
+        let Some(mut progress) = rx.recv().await else {
             break;
         };
+        let now = Instant::now();
+        let (previous_bytes, previous_time) =
+            last_seen.get(&progress.id).copied().unwrap_or((0, started));
+        let elapsed = now.duration_since(previous_time).as_secs_f64().max(0.02);
+        let measured = (progress.downloaded.saturating_sub(previous_bytes)) as f64 / elapsed;
+        last_seen.insert(progress.id, (progress.downloaded, now));
+        if progress.speed <= 1.0 {
+            progress.speed = measured;
+        }
+        if let Some(total) = progress.total
+            && progress.eta.is_none()
+            && progress.speed > 1.0
+            && total > progress.downloaded
+        {
+            progress.eta = Some((total - progress.downloaded) as f64 / progress.speed);
+        }
+
         if let Some(existing) = latest.iter_mut().find(|p| p.id == progress.id) {
             *existing = progress;
         } else {
             latest.push(progress);
         }
         if rendered > 0 {
-            execute!(stdout(), cursor::MoveUp(rendered as u16)).ok();
+            execute!(
+                stdout(),
+                cursor::MoveUp(rendered as u16),
+                Clear(ClearType::FromCursorDown)
+            )
+            .ok();
         }
         latest.sort_by_key(|p| p.id);
         for item in &latest {
-            execute!(stdout(), Clear(ClearType::CurrentLine)).ok();
             let color = match item.state {
                 JobState::Done => Color::Green,
                 JobState::Failed | JobState::Cancelled => Color::Red,
@@ -214,20 +238,23 @@ pub async fn run_plain(jobs: Vec<DownloadJob>, config: &Config, client: Arc<Clie
                 _ => Color::Magenta,
             };
             execute!(stdout(), SetForegroundColor(color)).ok();
-            let bar = bar(item, 42);
-            let speed = human_speed(item.speed);
-            let percent = (item.fraction() * 100.0) as u32;
+            let speed = if item.state == JobState::Running {
+                human_speed(item.speed)
+            } else {
+                "—".into()
+            };
+            let eta = item.eta.map(format_duration).unwrap_or_else(|| "—".into());
             let detail = item.error.as_deref().unwrap_or("");
             writeln!(
                 stdout(),
-                " {} {} {:>3}% {} {:>10}  {} {}",
+                " {} {:<32} {:>3}% {} {:>10}  eta {:>7} {}",
                 item.state.glyph(),
-                item.label.chars().take(38).collect::<String>(),
-                percent,
-                bar,
+                item.label.chars().take(32).collect::<String>(),
+                (item.fraction() * 100.0) as u32,
+                bar(item, 32),
                 speed,
-                item.total.map(human_bytes).unwrap_or_else(|| "live".into()),
-                detail
+                eta,
+                detail.chars().take(40).collect::<String>()
             )
             .ok();
             execute!(stdout(), ResetColor).ok();
@@ -236,13 +263,24 @@ pub async fn run_plain(jobs: Vec<DownloadJob>, config: &Config, client: Arc<Clie
         rendered = latest.len();
     }
     let mut failures = Vec::new();
+    let mut total_bytes = 0u64;
     for handle in handles {
         match handle.await {
-            Ok(Ok(path)) => println!("  ✽ saved {}", path.display()),
+            Ok(Ok(path)) => {
+                total_bytes += std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+                println!("  ✓ saved {}", path.display());
+            }
             Ok(Err(error)) => failures.push(error.to_string()),
             Err(error) => failures.push(error.to_string()),
         }
     }
+    let elapsed = started.elapsed().as_secs_f64().max(0.1);
+    println!(
+        "  {} file(s) · {} · avg {}",
+        count,
+        human_bytes(total_bytes),
+        human_speed(total_bytes as f64 / elapsed)
+    );
     if !failures.is_empty() {
         bail!(
             "{} download(s) failed: {}",
@@ -251,6 +289,17 @@ pub async fn run_plain(jobs: Vec<DownloadJob>, config: &Config, client: Arc<Clie
         );
     }
     Ok(())
+}
+
+fn format_duration(seconds: f64) -> String {
+    let seconds = seconds.round().max(0.0) as u64;
+    if seconds < 60 {
+        format!("{seconds}s")
+    } else if seconds < 3600 {
+        format!("{}m{:02}s", seconds / 60, seconds % 60)
+    } else {
+        format!("{}h{:02}m", seconds / 3600, (seconds % 3600) / 60)
+    }
 }
 
 fn is_final(state: JobState) -> bool {
@@ -264,15 +313,15 @@ fn bar(progress: &JobProgress, width: usize) -> String {
     let filled = (progress.fraction() * width as f64) as usize;
     let filled = filled.min(width);
     let mut out = String::with_capacity(width + 2);
-    out.push('╭');
+    out.push('[');
     for i in 0..width {
         if i < filled {
-            out.push(if i % 4 == 0 { '✿' } else { '─' });
+            out.push('━');
         } else {
             out.push('·');
         }
     }
-    out.push('╯');
+    out.push(']');
     out
 }
 

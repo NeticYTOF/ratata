@@ -5,6 +5,17 @@ It downloads through many parallel HTTP ranges into a single preallocated file, 
 interrupted transfers, retries intelligently, and shows crisp aligned progress in a
 clean terminal UI.
 
+## Quick start
+
+```sh
+ratata https://www.youtube.com/watch?v=...
+ratata https://www.instagram.com/reel/...
+ratata --help
+```
+
+Paste a link and Ratata saves the best version to your Downloads folder. No flags needed.
+With no arguments in a terminal it asks for a link. Press `q` at any time to stop.
+
 Repo: https://github.com/NeticYTOF/ratata
 
 ## Install
@@ -112,7 +123,6 @@ Rates are sampled from actual byte deltas; a final summary reports totals and av
 speed. Truecolor is used when available, with 256-color and `NO_COLOR` fallbacks.
 Rendering is diffed, and `--no-tui` gives plain ANSI output for scripts.
 
-![Ratata terminal UI](docs/tui.png)
 
 ## Config
 
@@ -125,7 +135,7 @@ concurrent_downloads = 3
 retries = 4
 timeout_secs = 30
 min_segment_size = 1048576
-theme = "blossom"
+theme = "default"
 tui = true
 overwrite = false
 ```
