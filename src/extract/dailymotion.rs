@@ -90,6 +90,13 @@ fn parse(json: &Value, url: &Url, id: &str) -> Option<Media> {
                 };
                 let mut format = MediaFormat::new(quality, address, MediaKind::Video);
                 format.label = Some(quality.clone());
+                format
+                    .headers
+                    .push(("Referer".into(), "https://www.dailymotion.com/".into()));
+                format.headers.push((
+                    "User-Agent".into(),
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36".into(),
+                ));
                 let mime = entry["type"].as_str().unwrap_or("");
                 if address.contains(".m3u8") || mime.contains("mpegURL") {
                     format.manifest = Some(ManifestKind::Hls);
@@ -102,6 +109,9 @@ fn parse(json: &Value, url: &Url, id: &str) -> Option<Media> {
         && let Some(address) = find_media_url(json)
     {
         let mut format = MediaFormat::new("video", address.clone(), MediaKind::Video);
+        format
+            .headers
+            .push(("Referer".into(), "https://www.dailymotion.com/".into()));
         if address.contains(".m3u8") {
             format.manifest = Some(ManifestKind::Hls);
         }

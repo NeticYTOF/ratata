@@ -328,6 +328,22 @@ async fn run() -> Result<()> {
                 ..AudioMeta::default()
             });
             audio_meta.title = clean_music_title(&audio_meta.title);
+            if audio_meta.album.is_empty() {
+                audio_meta.album = "Ratata audio".to_owned();
+            }
+            if audio_meta.year.is_none() {
+                audio_meta.year = Some(
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as u32
+                        / 31_536_000
+                        + 1970,
+                );
+            }
+            if audio_meta.track.is_none() {
+                audio_meta.track = Some(1);
+            }
             if audio_meta.artwork.is_none() {
                 audio_meta.artwork = job.media.thumbnail.clone();
             }

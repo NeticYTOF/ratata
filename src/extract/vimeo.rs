@@ -54,6 +54,7 @@ fn parse_config(json: &Value, url: &Url, id: &str) -> Option<Media> {
             format.width = file["width"].as_u64().map(|v| v as u32);
             format.height = file["height"].as_u64().map(|v| v as u32);
             format.codec = file["codec"].as_str().map(str::to_owned);
+            add_vimeo_headers(&mut format);
             media.add(format);
         }
     }
@@ -74,6 +75,7 @@ fn parse_config(json: &Value, url: &Url, id: &str) -> Option<Media> {
                 ManifestKind::Dash
             });
             format.label = Some(label.into());
+            add_vimeo_headers(&mut format);
             media.add(format);
         }
     }
@@ -82,6 +84,17 @@ fn parse_config(json: &Value, url: &Url, id: &str) -> Option<Media> {
     } else {
         Some(media)
     }
+}
+
+fn add_vimeo_headers(format: &mut MediaFormat) {
+    format
+        .headers
+        .push(("Referer".into(), "https://vimeo.com/".into()));
+    format.headers.push((
+        "User-Agent".into(),
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36"
+            .into(),
+    ));
 }
 
 fn find_manifest_url(value: &Value, suffix: &str) -> Option<String> {

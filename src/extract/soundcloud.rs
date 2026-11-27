@@ -85,12 +85,23 @@ async fn discover_client_id(client: &Client) -> Option<String> {
     }
     let document = scraper::Html::parse_document(&home);
     let selector = scraper::Selector::parse("script[src]").ok()?;
-    for element in document.select(&selector).take(20) {
-        let Some(src) = element.value().attr("src") else {
-            continue;
-        };
+    let mut bundles: Vec<String> = document
+        .select(&selector)
+        .filter_map(|element| element.value().attr("src").map(str::to_owned))
+        .collect();
+    if let Ok(regex) = Regex::new(r#"(?:https:)?//[a-zA-Z0-9.-]*sndcdn\.com/[^"\s<>]+\.js"#) {
+        for capture in regex.captures_iter(&home) {
+            if let Some(value) = capture.get(0) {
+                bundles.push(format!(
+                    "https:{}",
+                    value.as_str().trim_start_matches("https:")
+                ));
+            }
+        }
+    }
+    for src in bundles.into_iter().take(24) {
         let absolute = if src.starts_with("http") {
-            src.to_owned()
+            src
         } else if src.starts_with("//") {
             format!("https:{src}")
         } else {

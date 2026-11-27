@@ -187,7 +187,10 @@ impl DownloadManager {
                     } else {
                         stalled += 1;
                         if stalled >= 20 {
-                            break Err(anyhow::anyhow!("no download progress for 20 seconds"));
+                            break Err(anyhow::anyhow!(
+                                "no download progress for 20 seconds at {}",
+                                job.format.url
+                            ));
                         }
                     }
                 }

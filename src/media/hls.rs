@@ -112,8 +112,9 @@ pub async fn download(
         |((index, part), segment)| {
             let ctx = ctx.clone();
             let tracker = tracker.clone();
+            let headers = job.format.headers.clone();
             async move {
-                let bytes = fetch(&ctx, &segment).await?;
+                let bytes = fetch(&ctx, &segment, &headers).await?;
                 let mut file = OpenOptions::new()
                     .create(true)
                     .truncate(true)
@@ -155,11 +156,15 @@ pub async fn download(
     Ok(destination)
 }
 
-async fn fetch(ctx: &crate::download::WorkerContext, segment: &Segment) -> Result<Vec<u8>> {
+async fn fetch(
+    ctx: &crate::download::WorkerContext,
+    segment: &Segment,
+    headers: &[(String, String)],
+) -> Result<Vec<u8>> {
     let mut last = String::new();
     for attempt in 0..=ctx.config.retries {
         ctx.gate().await?;
-        let mut request = ctx.client.get(&segment.url);
+        let mut request = ctx.client.get(&segment.url).headers(headers_map(headers)?);
         if let Some((length, offset)) = segment.range {
             request = request.header(RANGE, format!("bytes={offset}-{}", offset + length - 1));
         }
