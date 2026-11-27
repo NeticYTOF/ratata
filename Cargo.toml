@@ -11,7 +11,7 @@ aes = "0.8"
 anyhow = "1"
 base64 = "0.22"
 bytes = "1"
-cbc = { version = "0.8", features = ["block-padding"] }
+dirs = "6"
 clap = { version = "4", features = ["derive"] }
 crossterm = { version = "0.28", features = ["event-stream"] }
 futures-util = "0.3"

@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::error::RatataError;
 use anyhow::Result;
-use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, COOKIE, REFERER, USER_AGENT};
+use reqwest::header::{AUTHORIZATION, COOKIE, HeaderMap, HeaderValue, REFERER, USER_AGENT};
 use reqwest::{Client, ClientBuilder};
 use serde_json::Value;
 use std::time::Duration;
@@ -60,7 +60,12 @@ pub async fn get_json(client: &Client, url: &str, headers: &[(String, String)]) 
     Ok(response.json::<Value>().await?)
 }
 
-pub async fn post_json(client: &Client, url: &str, body: &Value, headers: &[(String, String)]) -> Result<Value> {
+pub async fn post_json(
+    client: &Client,
+    url: &str,
+    body: &Value,
+    headers: &[(String, String)],
+) -> Result<Value> {
     let response = client
         .post(url)
         .headers(headers_map(headers)?)

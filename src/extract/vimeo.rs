@@ -1,0 +1,102 @@
+use crate::error::RatataError;
+use crate::http::{browser_headers, get_json};
+use crate::model::{ManifestKind, Media, MediaFormat, MediaKind};
+use anyhow::Result;
+use reqwest::Client;
+use serde_json::Value;
+use url::Url;
+
+pub async fn extract(url: &Url, client: &Client) -> Result<Media> {
+    let id = url
+        .path_segments()
+        .and_then(|s| {
+            s.filter(|p| !p.is_empty())
+                .find(|p| p.chars().all(|c| c.is_ascii_digit()))
+        })
+        .ok_or_else(|| RatataError::UnsupportedUrl(url.to_string()))?;
+    let endpoint = format!("https://player.vimeo.com/video/{id}/config");
+    let json = get_json(client, &endpoint, &browser_headers("https://vimeo.com/")).await?;
+    parse_config(&json, url, id)
+        .ok_or_else(|| RatataError::Extraction(format!("no Vimeo files for {id}")).into())
+}
+
+fn parse_config(json: &Value, url: &Url, id: &str) -> Option<Media> {
+    let video = &json["video"];
+    let mut media = Media::new(
+        "Vimeo",
+        url.to_string(),
+        video["title"]
+            .as_str()
+            .unwrap_or(id)
+            .chars()
+            .take(140)
+            .collect::<String>(),
+    );
+    media.id = id.into();
+    media.author = video["owner"]["name"].as_str().map(str::to_owned);
+    media.duration = video["duration"].as_f64();
+    media.thumbnail = video["thumbs"]
+        .as_object()
+        .and_then(|m| m.values().next_back())
+        .and_then(|v| v.as_str())
+        .map(str::to_owned);
+
+    if let Some(progressive) = json["request"]["files"]["progressive"].as_array() {
+        for file in progressive {
+            let Some(address) = file["url"].as_str() else {
+                continue;
+            };
+            let mut format = MediaFormat::new(
+                format!("p{}", media.formats.len() + 1),
+                address,
+                MediaKind::Video,
+            );
+            format.width = file["width"].as_u64().map(|v| v as u32);
+            format.height = file["height"].as_u64().map(|v| v as u32);
+            format.codec = file["codec"].as_str().map(str::to_owned);
+            media.add(format);
+        }
+    }
+    for (key, label) in [("hls", "HLS"), ("dash", "DASH")] {
+        let cdn = json["request"]["files"][key]["cdn_url"]
+            .as_str()
+            .or_else(|| json["request"]["files"][key]["url"].as_str());
+        if let Some(address) = cdn {
+            let mut format =
+                MediaFormat::new(label.to_ascii_lowercase(), address, MediaKind::Video);
+            format.manifest = Some(if key == "hls" {
+                ManifestKind::Hls
+            } else {
+                ManifestKind::Dash
+            });
+            format.label = Some(label.into());
+            media.add(format);
+        }
+    }
+    if media.formats.is_empty() {
+        None
+    } else {
+        Some(media)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_progressive_and_hls() {
+        let json: Value = serde_json::from_str(r#"{
+          "video":{"title":"Tunnel","duration":42,"owner":{"name":"Studio"}},
+          "request":{"files":{
+            "progressive":[{"url":"https://vod/progressive.mp4","width":1920,"height":1080,"codec":"h264"}],
+            "hls":{"cdn_url":"https://vod/master.m3u8"}
+          }}
+        }"#).unwrap();
+        let url = Url::parse("https://vimeo.com/12345").unwrap();
+        let media = parse_config(&json, &url, "12345").unwrap();
+        assert_eq!(media.title, "Tunnel");
+        assert_eq!(media.formats.len(), 2);
+        assert_eq!(media.formats[1].manifest, Some(ManifestKind::Hls));
+    }
+}

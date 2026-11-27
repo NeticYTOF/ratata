@@ -42,7 +42,7 @@ impl Default for Config {
 
 impl Config {
     pub fn path() -> Result<PathBuf> {
-        let base = dirs_base();
+        let base = dirs::config_dir().context("cannot locate user config directory")?;
         Ok(base.join("ratata").join("config.toml"))
     }
 
@@ -70,31 +70,15 @@ impl Config {
     }
 }
 
-fn dirs_base() -> PathBuf {
-    if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
-        if !xdg.is_empty() {
-            return PathBuf::from(xdg);
-        }
-    }
-    #[cfg(windows)]
-    if let Ok(appdata) = std::env::var("APPDATA") {
-        return PathBuf::from(appdata);
-    }
-    #[cfg(not(windows))]
-    if let Ok(home) = std::env::var("HOME") {
-        return PathBuf::from(home).join(".config");
-    }
-    if let Ok(home) = std::env::var("USERPROFILE") {
-        return PathBuf::from(home).join("AppData").join("Roaming");
-    }
-    PathBuf::from(".")
-}
-
+/// Expands `~` with the platform home directory supplied by `dirs`.
 pub fn expand_tilde(path: &str) -> PathBuf {
-    if let Some(rest) = path.strip_prefix("~/").or_else(|| path.strip_prefix("~\\")) {
-        if let Some(home) = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")) {
-            return PathBuf::from(home).join(rest.replace('\\', "/"));
-        }
+    if path == "~" {
+        return dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    }
+    if let Some(rest) = path.strip_prefix("~/").or_else(|| path.strip_prefix("~\\"))
+        && let Some(home) = dirs::home_dir()
+    {
+        return home.join(rest.replace('\\', "/"));
     }
     PathBuf::from(path)
 }
@@ -121,7 +105,7 @@ mod tests {
 
     #[test]
     fn state_path_sits_next_to_target() {
-        let path = state_path(Path::new("/tmp/clip.mp4"));
-        assert_eq!(path, Path::new("/tmp/clip.mp4.ratata.json"));
+        let path = state_path(Path::new("clip.mp4"));
+        assert_eq!(path, Path::new("clip.mp4.ratata.json"));
     }
 }

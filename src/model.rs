@@ -104,7 +104,22 @@ pub enum ManifestKind {
 fn guess_ext(url: &str, kind: MediaKind) -> String {
     let path = url.split('?').next().unwrap_or(url);
     let suffix = path.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
-    if matches!(suffix.as_str(), "mp4" | "webm" | "mov" | "mkv" | "m4a" | "mp3" | "jpg" | "jpeg" | "png" | "webp" | "gif" | "srt" | "vtt") {
+    if matches!(
+        suffix.as_str(),
+        "mp4"
+            | "webm"
+            | "mov"
+            | "mkv"
+            | "m4a"
+            | "mp3"
+            | "jpg"
+            | "jpeg"
+            | "png"
+            | "webp"
+            | "gif"
+            | "srt"
+            | "vtt"
+    ) {
         if suffix == "jpeg" {
             return "jpg".into();
         }
@@ -139,7 +154,11 @@ pub struct Media {
 }
 
 impl Media {
-    pub fn new(platform: impl Into<String>, source_url: impl Into<String>, title: impl Into<String>) -> Self {
+    pub fn new(
+        platform: impl Into<String>,
+        source_url: impl Into<String>,
+        title: impl Into<String>,
+    ) -> Self {
         Self {
             id: String::new(),
             platform: platform.into(),
