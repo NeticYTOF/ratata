@@ -45,14 +45,18 @@ pub fn is_music_link(url: &Url) -> bool {
 }
 
 pub fn apple_id(url: &Url) -> Option<String> {
+    let from_query = url
+        .query_pairs()
+        .find(|(key, value)| key == "i" && !value.is_empty())
+        .map(|(_, value)| value.into_owned());
+    if let Some(id) = from_query {
+        return Some(id);
+    }
     url.path_segments()?
         .filter(|segment| !segment.is_empty())
-        .find_map(|segment| {
-            segment
-                .strip_prefix("id")
-                .filter(|id| !id.is_empty())
-                .map(str::to_owned)
-        })
+        .map(|segment| segment.strip_prefix("id").unwrap_or(segment))
+        .find(|segment| !segment.is_empty() && segment.chars().all(|c| c.is_ascii_digit()))
+        .map(str::to_owned)
 }
 
 pub async fn metadata(url: &Url, client: &Client) -> Result<Vec<TrackMetadata>> {
@@ -76,23 +80,88 @@ async fn spotify_metadata(url: &Url, client: &Client) -> Result<Vec<TrackMetadat
         &browser_headers("https://open.spotify.com/"),
     )
     .await?;
-    let title = json["title"].as_str().unwrap_or("Spotify track").to_owned();
-    let artist = json["author_name"]
+    let mut title = json["title"].as_str().unwrap_or("Spotify track").to_owned();
+    let mut artist = json["author_name"]
         .as_str()
         .unwrap_or("Unknown artist")
         .to_owned();
-    let artwork = json["thumbnail_url"].as_str().map(str::to_owned);
+    let mut artwork = json["thumbnail_url"].as_str().map(str::to_owned);
+    let mut album = String::new();
+    if let Some(track_id) = url
+        .path_segments()
+        .and_then(|mut segments| segments.find(|segment| segment.starts_with("track")))
+        .and_then(|_| {
+            url.path_segments()
+                .and_then(|mut s| s.nth(1))
+                .map(str::to_owned)
+        })
+    {
+        let embed_url = format!("https://open.spotify.com/embed/track/{track_id}");
+        if let Ok(page) = get_text(
+            client,
+            &embed_url,
+            &browser_headers("https://open.spotify.com/"),
+        )
+        .await
+        {
+            let parsed = parse_spotify_embed(&page);
+            if parsed.artist.is_some() {
+                artist = parsed.artist.unwrap_or_default();
+            }
+            if parsed.album.is_some() {
+                album = parsed.album.unwrap_or_default();
+            }
+            if parsed.title.is_some() {
+                title = parsed.title.unwrap_or_default();
+            }
+            artwork = parsed.artwork.or(artwork);
+        }
+    }
     let (title, artist) = split_title_artist(&title, &artist);
     Ok(vec![TrackMetadata {
         title,
         artist,
-        album: String::new(),
+        album,
         year: None,
         track: None,
         duration: None,
         artwork,
         source: "Spotify".into(),
     }])
+}
+
+#[derive(Default)]
+struct SpotifyEmbed {
+    title: Option<String>,
+    artist: Option<String>,
+    album: Option<String>,
+    artwork: Option<String>,
+}
+
+fn parse_spotify_embed(html: &str) -> SpotifyEmbed {
+    let capture = |pattern: &str| -> Option<String> {
+        regex::Regex::new(pattern)
+            .ok()?
+            .captures(html)
+            .and_then(|c| c.get(1))
+            .map(|m| m.as_str().trim_matches('\\').to_owned())
+    };
+    let anchored = |anchor: &str| -> Option<String> {
+        let start = html.find(anchor)?;
+        let end = (start + 160).min(html.len());
+        let slice = &html[start..end];
+        regex::Regex::new(r#"name.{0,12}?([A-Za-z][A-Za-z0-9 .'-]{1,60})"#)
+            .ok()?
+            .captures(slice)
+            .and_then(|c| c.get(1))
+            .map(|m| m.as_str().trim().to_owned())
+    };
+    SpotifyEmbed {
+        title: capture(r#"<meta property="og:title" content="([^"]+)""#),
+        artist: anchored("artist"),
+        album: anchored("album"),
+        artwork: capture(r#"<meta property="og:image" content="([^"]+)""#),
+    }
 }
 
 async fn apple_metadata(url: &Url, client: &Client) -> Result<Vec<TrackMetadata>> {
@@ -306,7 +375,15 @@ mod tests {
         assert_eq!(
             apple_id(&Url::parse("https://music.apple.com/us/album/x/id123?i=456").unwrap())
                 .as_deref(),
-            Some("123")
+            Some("456")
+        );
+        assert_eq!(
+            apple_id(
+                &Url::parse("https://music.apple.com/us/song/never-gonna-give-you-up/1558534271")
+                    .unwrap()
+            )
+            .as_deref(),
+            Some("1558534271")
         );
     }
 
@@ -351,5 +428,14 @@ mod tests {
         };
         assert!(match_score(&track, &good) > match_score(&track, &bad));
         assert_eq!(best_match(&track, &[bad, good]).unwrap().video_id, "a");
+    }
+
+    #[test]
+    fn parses_spotify_embed_metadata() {
+        let html = r#"<meta property="og:title" content="Never Gonna Give You Up"><meta property="og:image" content="https://cover.jpg">{\"artist\":{\"name\":\"Rick Astley\"},\"album\":{\"name\":\"Whenever You Need Somebody\"}}"#;
+        let parsed = parse_spotify_embed(html);
+        assert_eq!(parsed.artist.as_deref(), Some("Rick Astley"));
+        assert_eq!(parsed.album.as_deref(), Some("Whenever You Need Somebody"));
+        assert_eq!(parsed.artwork.as_deref(), Some("https://cover.jpg"));
     }
 }

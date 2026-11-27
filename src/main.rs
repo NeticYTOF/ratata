@@ -71,6 +71,9 @@ struct Cli {
     #[arg(long, global = true, hide = true)]
     overwrite: bool,
 
+    /// Keep the original audio file after MP3 conversion
+    #[arg(long, global = true, hide = true)]
+    keep_source: bool,
     /// Extra diagnostics
     #[arg(long, global = true, hide = true)]
     verbose: bool,
@@ -138,6 +141,9 @@ async fn run() -> Result<()> {
         config.retries = n;
     }
     if cli.no_tui {
+        config.tui = false;
+    }
+    if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
         config.tui = false;
     }
     if cli.overwrite {
@@ -281,18 +287,51 @@ async fn run() -> Result<()> {
     if mp3_mode {
         let ffmpeg = audio::ffmpeg_or_error(config.ffmpeg.as_deref())?;
         for (job, meta) in jobs_to_convert.iter().zip(metas.iter()) {
-            let audio_meta = meta.clone().unwrap_or_else(|| AudioMeta {
+            let mut audio_meta = meta.clone().unwrap_or_else(|| AudioMeta {
                 title: job.media.title.clone(),
                 artist: job.media.author.clone().unwrap_or_default(),
+                artwork: job.media.thumbnail.clone(),
                 ..AudioMeta::default()
             });
+            audio_meta.title = clean_music_title(&audio_meta.title);
+            if audio_meta.artwork.is_none() {
+                audio_meta.artwork = job.media.thumbnail.clone();
+            }
             let output =
                 audio::convert_to_mp3(&plain_client, &job.destination, &audio_meta, &ffmpeg)
                     .await?;
             println!("  ✓ MP3 saved to {}", output.display());
+            if !cli.keep_source && output != job.destination {
+                let _ = tokio::fs::remove_file(&job.destination).await;
+            }
         }
     }
     Ok(())
+}
+
+fn clean_music_title(title: &str) -> String {
+    let clutter = [
+        "(Official Video)",
+        "(Official Audio)",
+        "(Official Music Video)",
+        "(4K Remaster)",
+        "(HD)",
+        "(HQ)",
+        "(Audio)",
+        "(Lyrics)",
+        "(Lyric Video)",
+        "(Visualizer)",
+    ];
+    let mut cleaned = title.to_owned();
+    for fragment in clutter {
+        cleaned = cleaned.replace(fragment, "");
+    }
+    cleaned
+        .split(" - ")
+        .next()
+        .unwrap_or(&cleaned)
+        .trim()
+        .to_owned()
 }
 
 fn prompt_url() -> Result<String> {

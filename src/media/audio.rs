@@ -43,7 +43,6 @@ pub async fn convert_to_mp3(
     command
         .arg("-map")
         .arg("0:a:0")
-        .arg("-vn")
         .arg("-c:a")
         .arg("libmp3lame")
         .arg("-b:a")
