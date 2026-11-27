@@ -205,8 +205,9 @@ async fn run() -> Result<()> {
 
     if urls.is_empty() {
         if io::stdin().is_terminal() {
-            println!("  ▄▀█ █▄▄ ▀█▀ ▄▀█ ▄▀█ ▀█▀");
-            println!("  █▀█ █▄█  █  █▀█ █▀█  █\n");
+            println!("  ███ ▀█▀ ███ ▀█▀ ███ ▀█▀");
+            println!("  ██▀ ███ ▀█▀ ███ ▀█▀ ███");
+            println!("  ███ ███ ▀█▀ ███ ▀█▀ ███\n");
             println!("  Paste a link from YouTube, Instagram, Spotify and more.");
             println!(
                 "  Examples: ratata https://youtube.com/watch?v=...  |  ratata --mp3 https://soundcloud.com/...\n"

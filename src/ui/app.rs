@@ -242,7 +242,7 @@ mod tests {
         let buffer: &Buffer = terminal.backend().buffer();
         let rendered: String = buffer.content.iter().map(|cell| cell.symbol()).collect();
         assert!(
-            rendered.contains('▄') && rendered.contains('█'),
+            rendered.contains('▀') && rendered.contains('█'),
             "logo not rendered"
         );
         assert!(rendered.contains("YT"));

@@ -10,7 +10,11 @@ use ratatui::widgets::Paragraph;
 use unicode_width::UnicodeWidthStr;
 
 const SPINNER: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-const LOGO: [&str; 2] = ["▄▀█ █▄▄ ▀█▀ ▄▀█ ▄▀█ ▀█▀", "█▀█ █▄█  █  █▀█ █▀█  █"];
+const LOGO: [&str; 3] = [
+    "███ ▀█▀ ███ ▀█▀ ███ ▀█▀",
+    "██▀ ███ ▀█▀ ███ ▀█▀ ███",
+    "███ ███ ▀█▀ ███ ▀█▀ ███",
+];
 const SUBCELL: [char; 8] = [' ', '▏', '▎', '▍', '▌', '▋', '▊', '▉'];
 
 pub(crate) fn draw(app: &App, frame: &mut Frame) {
@@ -120,15 +124,18 @@ fn draw_header(app: &App, frame: &mut Frame, area: Rect, palette: &theme::Palett
         .map(|index| if index < filled { '━' } else { '·' })
         .collect();
 
-    let banner = format!("{}   {}", LOGO[0], status);
-    let gauge_row = format!("{}   speed {}", LOGO[1], gauge);
-    let stats_row = format!("{speed:>12}  avg {average:>12}  {total:>10}  {elapsed:>3}s");
+    let banner0 = format!("{}   {}", LOGO[0], status);
+    let banner1 = format!("{}   speed {}", LOGO[1], gauge);
+    let banner2 = format!(
+        "{}   {speed:>12}  avg {average:>12}  {total:>10}  {elapsed:>3}s",
+        LOGO[2]
+    );
     frame.render_widget(
         Paragraph::new(vec![
             top_line(width, palette),
-            panel_line(&banner, width, palette, palette.accent),
-            panel_line(&gauge_row, width, palette, palette.accent),
-            panel_line(&stats_row, width, palette, palette.text),
+            panel_line(&banner0, width, palette, palette.accent),
+            panel_line(&banner1, width, palette, palette.accent),
+            panel_line(&banner2, width, palette, palette.text),
             bottom_line(width, palette),
         ]),
         area,
@@ -261,11 +268,15 @@ fn draw_summary(app: &App, frame: &mut Frame, area: Rect, palette: &theme::Palet
         } else {
             "✗"
         };
-        let name = job
+        let raw_name = job
             .destination
             .file_name()
             .map(|value| value.to_string_lossy().into_owned())
             .unwrap_or_else(|| job.destination.to_string_lossy().into_owned());
+        let name: String = raw_name
+            .chars()
+            .filter(|ch| (*ch as u32) < 0x10000 && !ch.is_control())
+            .collect();
         let seconds = app
             .finished_at
             .get(&job.id)
@@ -456,6 +467,19 @@ mod tests {
                     "bad right border at {columns}/{row}: {last}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn banner_has_six_three_column_glyphs() {
+        assert_eq!(LOGO.len(), 3);
+        for row in LOGO {
+            assert_eq!(display_width(row), 6 * 3 + 5, "banner row: {row}");
+            assert_eq!(
+                row.split_whitespace().count(),
+                6,
+                "six letters expected: {row}"
+            );
         }
     }
 }
