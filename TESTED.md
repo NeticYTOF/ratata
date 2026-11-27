@@ -12,6 +12,8 @@ against real public URLs. Status: **works live**, **partial**, or **broken**.
 | YouTube playlist item | works live | https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PL6gx4Cwl9DGAAf2ebRn2R4rEfhbN9HWS | Metadata resolved from `v` parameter. |
 | YouTube age-neutral | works live | https://www.youtube.com/watch?v=aqz-KE-bpKQ | Big Buck Bunny formats resolved. |
 | Reddit | broken from this machine | https://www.reddit.com/r/videos/comments/8l0bfp/the_way_vreddit_was_meant_to_be_experienced/ | All endpoints return HTTP 403 from this IP (www, api, old, RSS), so no media could be fetched. Added www/api/old fallbacks for other networks. |
+| Instagram reel | works live | https://www.instagram.com/reel/DXHCQPViRaH | 9,385,649-byte MP4, `ftypisom`. Fixed double-escaped `video_url` in embed HTML and bot-check headers. |
+| Instagram post | works live | https://www.instagram.com/p/C8t7g-BAg5g | Video and image formats resolved from embed. |
 | DASH (time timeline) | works live | https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/tears-of-steel.mpd | 192,110,235-byte MP4, `ftypiso6`. Fixed per-AdaptationSet templates and `$Time$` timelines. |
 | X / Twitter | works live | https://twitter.com/pdxdylan/status/1540398733669666818 | 229,533-byte MP4 with `ftyp`. Fixed filename sanitization for titles containing URLs. |
 | Generic direct MP4 | works live | https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4 | 1,128,375 bytes, `ftypmp42` header. Fixed doubled `.mp4.mp4` filename. |

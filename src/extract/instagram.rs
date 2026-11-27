@@ -2,6 +2,7 @@ use crate::error::RatataError;
 use crate::http::{browser_headers, get_json, get_text};
 use crate::model::{Media, MediaFormat, MediaKind};
 use anyhow::{Context, Result};
+use regex::Regex;
 use reqwest::Client;
 use scraper::{Html, Selector};
 use serde_json::Value;
@@ -31,13 +32,11 @@ pub async fn extract(url: &Url, client: &Client) -> Result<Media> {
     }
 
     let embed_url = format!("https://www.instagram.com/p/{shortcode}/embed/captioned/");
-    let html = get_text(
-        client,
-        &embed_url,
-        &browser_headers("https://www.instagram.com/"),
-    )
-    .await
-    .context("fetching Instagram embed")?;
+    // A minimal UA avoids Instagram's desktop consent wall for embed pages.
+    let embed_headers = vec![("User-Agent".to_owned(), "Mozilla/5.0".to_owned())];
+    let html = get_text(client, &embed_url, &embed_headers)
+        .await
+        .context("fetching Instagram embed")?;
     parse_embed(&html, url, &shortcode, media)
 }
 
@@ -145,8 +144,39 @@ fn parse_embed(html: &str, url: &Url, _shortcode: &str, mut fallback: Media) -> 
     {
         fallback.title = title;
     }
+    for (key, kind) in [
+        ("video_url", MediaKind::Video),
+        ("display_url", MediaKind::Image),
+    ] {
+        let pattern = format!(r#"{key}\\?":\\?"([^"]+)""#);
+        let Some(capture) = Regex::new(&pattern)
+            .ok()
+            .and_then(|regex| regex.captures(html))
+        else {
+            continue;
+        };
+        let raw = capture[1].trim_end_matches('\\');
+        let mut decoded = raw.to_owned();
+        for _ in 0..3 {
+            match serde_json::from_str::<String>(&format!("\"{decoded}\"")) {
+                Ok(value) => decoded = value,
+                Err(_) => break,
+            }
+        }
+        if !decoded.starts_with("http") {
+            continue;
+        }
+        let mut format =
+            MediaFormat::new(format!("f{}", fallback.formats.len() + 1), decoded, kind);
+        format
+            .headers
+            .push(("Referer".into(), "https://www.instagram.com/".into()));
+        fallback.add(format);
+    }
     for key in ["og:video", "og:video:url", "og:video:secure_url"] {
-        if let Some(video) = meta(key) {
+        if let Some(video) = meta(key)
+            && !fallback.formats.iter().any(|f| f.kind == MediaKind::Video)
+        {
             fallback.add(MediaFormat::new(
                 format!("v{}", fallback.formats.len() + 1),
                 video,
@@ -193,5 +223,21 @@ mod tests {
         assert_eq!(media.title, "Flowers in a tunnel");
         assert_eq!(media.author.as_deref(), Some("bloom"));
         assert_eq!(media.formats.len(), 3);
+    }
+
+    #[test]
+    fn parses_escaped_embed_video_url() {
+        let html = r#"<script>{"video_url":"https:\/\/cdn.instagram.com\/clip.mp4","display_url":"https:\/\/cdn.instagram.com\/still.jpg"}</script>"#;
+        let url = Url::parse("https://www.instagram.com/reel/abc/").unwrap();
+        let media = parse_embed(
+            html,
+            &url,
+            "abc",
+            Media::new("Instagram", url.as_str(), "abc"),
+        )
+        .unwrap();
+        assert_eq!(media.formats.len(), 2);
+        assert_eq!(media.formats[0].url, "https://cdn.instagram.com/clip.mp4");
+        assert_eq!(media.formats[1].kind, MediaKind::Image);
     }
 }
