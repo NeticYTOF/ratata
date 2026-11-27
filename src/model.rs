@@ -245,4 +245,9 @@ pub struct DownloadJob {
     pub media: Media,
     pub format: MediaFormat,
     pub destination: std::path::PathBuf,
+    /// Bytes are downloaded here first when MP3 conversion is requested.
+    pub temp: Option<std::path::PathBuf>,
+    pub mp3: Option<crate::media::audio::AudioMeta>,
+    pub keep_source: bool,
+    pub validation_error: Option<String>,
 }

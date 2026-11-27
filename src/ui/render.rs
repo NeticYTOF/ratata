@@ -102,18 +102,15 @@ fn draw_header(app: &App, frame: &mut Frame, area: Rect, palette: &theme::Palett
     );
     let elapsed = app.started.elapsed().as_secs();
     let average = human_speed(app.average_speed());
-    let speed = if app.phase == Phase::Summary {
-        average.clone()
-    } else {
-        human_speed(app.total_speed)
-    };
-    let total = human_bytes(app.total_bytes);
-    let gauge_width = width.saturating_sub(62).clamp(8, 24);
     let effective = if app.phase == Phase::Summary {
         app.average_speed()
     } else {
         app.total_speed
     };
+    let speed = human_speed(effective);
+    let total = human_bytes(app.total_bytes);
+    let gathered = human_bytes(app.progress.values().map(|p| p.downloaded).sum::<u64>());
+    let gauge_width = width.saturating_sub(62).clamp(8, 24);
     let filled = ((effective / 24_000_000.0).clamp(0.0, 1.0) * gauge_width as f64) as usize;
     let gauge: String = (0..gauge_width)
         .map(|index| if index < filled { '━' } else { '·' })
@@ -125,7 +122,9 @@ fn draw_header(app: &App, frame: &mut Frame, area: Rect, palette: &theme::Palett
         let content = match index {
             0 => format!("{line}   {status}"),
             1 => format!("{line}   speed {gauge}"),
-            2 => format!("{line}   {speed:>12}  avg {average:>12}  {total:>10}  {elapsed:>3}s"),
+            2 => format!(
+                "{line}   {speed:>12}  avg {average:>12}  {gathered:>10}/{total:<10}  {elapsed:>3}s"
+            ),
             _ => line.clone(),
         };
         let color = if index < 2 {
@@ -221,7 +220,7 @@ fn draw_jobs(app: &App, frame: &mut Frame, area: Rect, palette: &theme::Palette)
         }
         if let Some(error) = &progress.error {
             lines.push(panel_line(
-                &format!("    {error}"),
+                &format!("    {}", friendly_failure(error)),
                 width,
                 palette,
                 palette.error,
@@ -327,6 +326,23 @@ fn draw_summary(app: &App, frame: &mut Frame, area: Rect, palette: &theme::Palet
     ));
     let lines = frame_panel(lines, width, area.height as usize, palette);
     frame.render_widget(Paragraph::new(lines), area);
+}
+
+fn friendly_failure(error: &str) -> String {
+    let lower = error.to_ascii_lowercase();
+    if lower.contains("403") || lower.contains("forbidden") {
+        "HTTP 403 blocked by site".into()
+    } else if lower.contains("401") {
+        "HTTP 401 sign-in required".into()
+    } else if lower.contains("not look like a link") {
+        "Not a link — paste a full https:// URL".into()
+    } else if lower.contains("no media formats") || lower.contains("no playable media") {
+        "No playable media found".into()
+    } else if lower.contains("timed out") || lower.contains("stalled") {
+        "Site timed out".into()
+    } else {
+        error.chars().take(80).collect()
+    }
 }
 
 fn draw_footer(frame: &mut Frame, area: Rect, palette: &theme::Palette) {
@@ -437,6 +453,10 @@ mod tests {
             ),
             format: MediaFormat::new("f1", "https://example.test/clip.mp4", MediaKind::Video),
             destination: std::path::PathBuf::from("/tmp/ratata/clip.mp4"),
+            temp: None,
+            mp3: None,
+            keep_source: false,
+            validation_error: None,
         };
         let mut app = App::new(vec![job]);
         app.update(JobProgress {

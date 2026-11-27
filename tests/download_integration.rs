@@ -104,6 +104,10 @@ fn test_setup(url: &str, label: &str) -> (Config, DownloadJob) {
             media,
             format,
             destination,
+            temp: None,
+            mp3: None,
+            keep_source: false,
+            validation_error: None,
         },
     )
 }

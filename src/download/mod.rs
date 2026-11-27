@@ -153,6 +153,20 @@ impl DownloadManager {
     }
     pub async fn download(&self, job: DownloadJob) -> Result<std::path::PathBuf> {
         let started = Instant::now();
+        if let Some(reason) = &job.validation_error {
+            let _ = self.tx.send(JobProgress {
+                id: job.id,
+                label: job.media.title.clone(),
+                downloaded: 0,
+                total: None,
+                speed: 0.0,
+                state: JobState::Failed,
+                error: Some(reason.clone()),
+                segments: Vec::new(),
+                eta: None,
+            });
+            return Err(anyhow::anyhow!("{reason}"));
+        }
         let _permit = self.global.acquire().await?;
         let host = Url::parse(&job.format.url)
             .ok()
@@ -173,7 +187,11 @@ impl DownloadManager {
             progress::ProgressTracker::new(self.tx.clone(), job.id, job.media.title.clone(), total);
         let reporter = tracker.spawn();
         tracker.set_state(JobState::Running);
-        let fetch = self.fetch_job(&job, &tracker);
+        let mut fetch_job = job.clone();
+        if let Some(temp) = &job.temp {
+            fetch_job.destination = temp.clone();
+        }
+        let fetch = self.fetch_job(&fetch_job, &tracker);
         tokio::pin!(fetch);
         let mut tick = tokio::time::interval(Duration::from_secs(1));
         let mut last_bytes = 0u64;
@@ -198,6 +216,31 @@ impl DownloadManager {
                 }
             }
         };
+        let mut result = result;
+        if let (Ok(path), Some(meta)) = (&result, &job.mp3) {
+            match crate::media::audio::ffmpeg_or_error(self.config.ffmpeg.as_deref()) {
+                Ok(ffmpeg) => {
+                    result = match crate::media::audio::convert_to_mp3(
+                        &self.client,
+                        path,
+                        meta,
+                        &ffmpeg,
+                        !job.keep_source,
+                    )
+                    .await
+                    {
+                        Ok(output) => Ok(output),
+                        Err(error) => Err(error),
+                    };
+                }
+                Err(error) => result = Err(error),
+            }
+        }
+        let _ = tokio::fs::remove_file(crate::config::state_path(&fetch_job.destination)).await;
+        let _ = tokio::fs::remove_file(direct::single_part_path(&fetch_job.destination)).await;
+        if job.temp.is_some() {
+            let _ = tokio::fs::remove_file(&fetch_job.destination).await;
+        }
         let elapsed = started.elapsed().as_secs_f64().max(0.1);
         let measured = (tracker.downloaded() as f64 / elapsed) as u64;
         let previous = self.average_speed.load(Ordering::Relaxed);

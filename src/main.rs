@@ -1,9 +1,10 @@
 use anyhow::{Context, Result, anyhow};
 use clap::{CommandFactory, Parser, Subcommand};
-use ratata::media::audio::{self, AudioMeta};
+use ratata::media::audio::AudioMeta;
 use ratata::{
     Config, DownloadJob, Media, MediaFormat, MediaKind, download, extract, http, sanitize_filename,
 };
+use std::collections::HashSet;
 use std::io::{self, IsTerminal, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -221,10 +222,26 @@ async fn run() -> Result<()> {
     }
 
     let client = http::build_client(&config)?;
-    let mut prepared: Vec<(DownloadJob, Option<AudioMeta>)> = Vec::new();
+    let mut jobs: Vec<DownloadJob> = Vec::new();
+    let mut used_paths: HashSet<PathBuf> = HashSet::new();
     let mut next_id = 0usize;
     for url in urls.iter() {
-        let parsed = Url::parse(url)?;
+        let parsed = match Url::parse(url) {
+            Ok(parsed)
+                if matches!(parsed.scheme(), "http" | "https") && parsed.host_str().is_some() =>
+            {
+                parsed
+            }
+            _ => {
+                jobs.push(invalid_job(
+                    next_id,
+                    url,
+                    "That does not look like a link. Try: paste a full URL starting with https://",
+                ));
+                next_id += 1;
+                continue;
+            }
+        };
         let mut sources: Vec<(Media, Option<AudioMeta>)> = Vec::new();
         if extract::music::is_spotify(&parsed) || extract::music::is_apple_music(&parsed) {
             println!("  · Reading track metadata…");
@@ -255,8 +272,14 @@ async fn run() -> Result<()> {
                 sources.push((media, Some(meta)));
             }
         } else {
-            let media = extract::extract(url, &client, &config).await?;
-            sources.push((media, None));
+            match extract::extract(url, &client, &config).await {
+                Ok(media) => sources.push((media, None)),
+                Err(error) => {
+                    jobs.push(invalid_job(next_id, url, &friendly_short_reason(&error)));
+                    next_id += 1;
+                    continue;
+                }
+            }
         }
 
         for (media, meta) in sources {
@@ -288,33 +311,44 @@ async fn run() -> Result<()> {
                 )]
             };
             for (format, suffix) in choices {
-                let destination = destination_for(
+                let base = destination_for(
                     &media,
                     &format,
                     &config,
                     cli.output.as_deref(),
                     suffix.as_deref(),
+                    &mut used_paths,
                 )?;
-                prepared.push((
-                    DownloadJob {
-                        id: next_id,
-                        media: media.clone(),
-                        format,
-                        destination,
-                    },
-                    meta.clone(),
-                ));
+                let (destination, temp, mp3) = if mp3_mode {
+                    let mut meta = meta.clone().unwrap_or_else(|| AudioMeta {
+                        title: media.title.clone(),
+                        artist: media.author.clone().unwrap_or_default(),
+                        artwork: media.thumbnail.clone(),
+                        ..AudioMeta::default()
+                    });
+                    meta.title = clean_music_title(&meta.title);
+                    (base.with_extension("mp3"), Some(base), Some(meta))
+                } else {
+                    (base, None, None)
+                };
+                used_paths.insert(destination.clone());
+                jobs.push(DownloadJob {
+                    id: next_id,
+                    media: media.clone(),
+                    format,
+                    destination,
+                    temp,
+                    mp3,
+                    keep_source: cli.keep_source,
+                    validation_error: None,
+                });
                 next_id += 1;
             }
         }
     }
-    if prepared.is_empty() {
+    if jobs.is_empty() {
         return Ok(());
     }
-    let metas: Vec<Option<AudioMeta>> = prepared.iter().map(|(_, meta)| meta.clone()).collect();
-    let jobs: Vec<DownloadJob> = prepared.into_iter().map(|(job, _)| job).collect();
-    let plain_client = client.clone();
-    let jobs_to_convert = jobs.clone();
     if jobs.iter().any(|job| job.media.platform.contains('→')) {
         println!("  note: audio matched on a public YouTube source, not Spotify/Apple");
     }
@@ -323,31 +357,6 @@ async fn run() -> Result<()> {
         ratata::ui::run(jobs, config.clone(), client).await?;
     } else {
         download::run_plain(jobs, &config, client).await?;
-    }
-
-    if mp3_mode {
-        let ffmpeg = audio::ffmpeg_or_error(config.ffmpeg.as_deref())?;
-        for (job, meta) in jobs_to_convert.iter().zip(metas.iter()) {
-            let mut audio_meta = meta.clone().unwrap_or_else(|| AudioMeta {
-                title: job.media.title.clone(),
-                artist: job.media.author.clone().unwrap_or_default(),
-                artwork: job.media.thumbnail.clone(),
-                ..AudioMeta::default()
-            });
-            audio_meta.title = clean_music_title(&audio_meta.title);
-            if audio_meta.artwork.is_none() {
-                audio_meta.artwork = job.media.thumbnail.clone();
-            }
-            let output = audio::convert_to_mp3(
-                &plain_client,
-                &job.destination,
-                &audio_meta,
-                &ffmpeg,
-                !cli.keep_source,
-            )
-            .await?;
-            println!("  ✓ MP3 saved to {}", output.display());
-        }
     }
     Ok(())
 }
@@ -424,6 +433,38 @@ fn friendly_error(error: &anyhow::Error) -> String {
     format!("Ratata hit a problem: {message}\n\nTry: {suggestion}")
 }
 
+fn invalid_job(id: usize, raw: &str, reason: &str) -> DownloadJob {
+    let mut media = Media::new("link", raw, raw);
+    media.title = raw.to_owned();
+    DownloadJob {
+        id,
+        media,
+        format: MediaFormat::new("none", "https://invalid.local/", MediaKind::Other),
+        destination: PathBuf::from("invalid-link"),
+        temp: None,
+        mp3: None,
+        keep_source: false,
+        validation_error: Some(reason.to_owned()),
+    }
+}
+
+fn friendly_short_reason(error: &anyhow::Error) -> String {
+    let message = error.to_string().to_ascii_lowercase();
+    if message.contains("403") || message.contains("forbidden") {
+        "HTTP 403 blocked by site".into()
+    } else if message.contains("401") {
+        "HTTP 401 sign-in required".into()
+    } else if message.contains("no media formats") || message.contains("no matching format") {
+        "No playable media found".into()
+    } else if message.contains("unsupported url") {
+        "That link is not supported".into()
+    } else if message.contains("timed out") || message.contains("stalled") {
+        "The site timed out".into()
+    } else {
+        "Could not read this link".into()
+    }
+}
+
 fn choose_format(media: &Media, requested: Option<&str>, audio_only: bool) -> Result<MediaFormat> {
     let chosen = if audio_only {
         media.best_audio().or_else(|| media.best_video())
@@ -449,6 +490,7 @@ fn destination_for(
     config: &Config,
     output: Option<&str>,
     suffix: Option<&str>,
+    used: &mut HashSet<PathBuf>,
 ) -> Result<PathBuf> {
     let explicit_file = output
         .map(PathBuf::from)
@@ -463,11 +505,15 @@ fn destination_for(
         dir.join(format!(
             "{}{}.{}",
             sanitize_filename(&media.title),
-            suffix.map(|s| format!("_{s}")).unwrap_or_default(),
+            suffix
+                .map(|s| format!("_{}", s.trim_matches('_')))
+                .unwrap_or_default(),
             format.ext
         ))
     };
-    if config.overwrite || !base.exists() {
+    let available = |path: &PathBuf| !used.contains(path) && (!path.exists() || config.overwrite);
+    if available(&base) {
+        used.insert(base.clone());
         return Ok(base);
     }
     let stem = base
@@ -479,8 +525,9 @@ fn destination_for(
         .map(|e| e.to_string_lossy().into_owned())
         .unwrap_or_else(|| format.ext.clone());
     for n in 1..1000 {
-        let candidate = base.with_file_name(format!("{stem}_{n}.{ext}"));
-        if !candidate.exists() {
+        let candidate = base.with_file_name(format!("{stem} ({n}).{ext}"));
+        if available(&candidate) {
+            used.insert(candidate.clone());
             return Ok(candidate);
         }
     }
@@ -524,5 +571,39 @@ mod tests {
         for row in banner {
             assert_eq!(row.chars().count(), 35, "banner row: {row}");
         }
+    }
+
+    #[test]
+    fn unique_destinations_use_parenthesised_numbers() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = Config {
+            output_dir: dir.path().to_string_lossy().into_owned(),
+            ..Config::default()
+        };
+        let media = Media::new(
+            "streamable",
+            "https://streamable.com/moo",
+            "Please dont eat me!",
+        );
+        let format = MediaFormat::new("f1", "https://cdn.example/a.mp4", MediaKind::Video);
+        let mut used = HashSet::new();
+        let first = destination_for(&media, &format, &config, None, None, &mut used).unwrap();
+        let second = destination_for(&media, &format, &config, None, None, &mut used).unwrap();
+        assert_eq!(first.file_name().unwrap(), "Please dont eat me!.mp4");
+        assert_eq!(second.file_name().unwrap(), "Please dont eat me! (1).mp4");
+    }
+
+    #[test]
+    fn invalid_link_job_is_flagged_with_reason() {
+        let job = invalid_job(7, "not-a-url", "That does not look like a link");
+        assert_eq!(
+            job.validation_error.as_deref(),
+            Some("That does not look like a link")
+        );
+        assert!(job.temp.is_none() && job.mp3.is_none());
+        assert_eq!(
+            friendly_short_reason(&anyhow!("HTTP 403 Forbidden")),
+            "HTTP 403 blocked by site"
+        );
     }
 }

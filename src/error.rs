@@ -25,7 +25,7 @@ pub fn sanitize_filename(name: &str) -> String {
             c => c,
         })
         .collect();
-    let trimmed = cleaned.trim().trim_matches('.');
+    let trimmed = cleaned.trim().trim_matches('.').trim_matches('_').trim();
     let trimmed = if trimmed.is_empty() {
         "ratata-download"
     } else {
@@ -50,5 +50,13 @@ mod tests {
         assert!(!safe.contains('\\'));
         assert!(!safe.contains('\n'));
         assert!(safe.contains("https"));
+    }
+
+    #[test]
+    fn trims_underscore_edges() {
+        assert_eq!(
+            sanitize_filename("__Please dont eat me!__"),
+            "Please dont eat me!"
+        );
     }
 }

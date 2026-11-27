@@ -224,6 +224,10 @@ mod tests {
             media: Media::new("YouTube", "https://example.test/watch", "Bloom clip"),
             format: MediaFormat::new("f1", "https://example.test/clip.mp4", MediaKind::Video),
             destination: std::path::PathBuf::from("clip.mp4"),
+            temp: None,
+            mp3: None,
+            keep_source: false,
+            validation_error: None,
         };
         let mut app = App::new(vec![job]);
         app.update(JobProgress {
@@ -262,6 +266,10 @@ mod tests {
                 crate::MediaKind::Video,
             ),
             destination: std::path::PathBuf::from("clip.mp4"),
+            temp: None,
+            mp3: None,
+            keep_source: false,
+            validation_error: None,
         };
         let mut app = App::new(vec![job]);
         app.update(JobProgress {

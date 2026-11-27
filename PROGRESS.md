@@ -27,6 +27,9 @@ Updated: 2026-11-27
   `cargo clippy --all-targets -- -D warnings`, `cargo fmt --all -- --check`.
 - v0.1.0 released at https://github.com/NeticYTOF/ratata/releases/tag/v0.1.0 with
   Windows x86_64 zip, Linux x86_64 tar.gz and SHA256SUMS.
+- TUI batch fixes: MP3 jobs finish on final `.mp3` path with intermediate and sidecar cleanup,
+  per-job temp/final paths avoid collisions, invalid links become friendly failed rows,
+  filenames trim edge underscores and use `(1)` duplicates, summary header shows gathered bytes/elapsed.
 
 ## Speed benchmarks (`scripts/bench.py`, Windows, release build)
 
