@@ -7,6 +7,7 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
+use unicode_width::UnicodeWidthStr;
 
 const SPINNER: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 const LOGO: [&str; 2] = ["▄▀█ █▄▄ ▀█▀ ▄▀█ ▄▀█ ▀█▀", "█▀█ █▄█  █  █▀█ █▀█  █"];
@@ -34,52 +35,81 @@ pub(crate) fn draw(app: &App, frame: &mut Frame) {
     draw_footer(frame, chunks[2], &palette);
 }
 
-fn top_border(width: usize, palette: &theme::Palette) -> Line<'static> {
+fn top_line(width: usize, palette: &theme::Palette) -> Line<'static> {
+    border_line('╭', '╮', width, palette)
+}
+
+fn bottom_line(width: usize, palette: &theme::Palette) -> Line<'static> {
+    border_line('╰', '╯', width, palette)
+}
+
+fn border_line(left: char, right: char, width: usize, palette: &theme::Palette) -> Line<'static> {
+    let inner = width.saturating_sub(2);
     Line::from(Span::styled(
-        format!("╭{}╯", "─".repeat(width.saturating_sub(2))),
+        format!("{left}{}{right}", "─".repeat(inner)),
         Style::default().fg(palette.border),
     ))
 }
 
-fn bottom_border(width: usize, palette: &theme::Palette) -> Line<'static> {
+fn display_width(value: &str) -> usize {
+    value.width()
+}
+
+fn truncate_display(value: &str, max: usize) -> String {
+    if display_width(value) <= max {
+        return value.to_owned();
+    }
+    let mut out = String::new();
+    let mut used = 0;
+    for ch in value.chars() {
+        let width = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0);
+        if used + width > max.saturating_sub(1) {
+            break;
+        }
+        out.push(ch);
+        used += width;
+    }
+    out.push('…');
+    out
+}
+
+fn panel_line(
+    content: &str,
+    width: usize,
+    _palette: &theme::Palette,
+    color: ratatui::style::Color,
+) -> Line<'static> {
+    let inner = width.saturating_sub(4);
+    let text = truncate_display(content, inner);
+    let padding = inner.saturating_sub(display_width(&text));
     Line::from(Span::styled(
-        format!("╰{}╯", "─".repeat(width.saturating_sub(2))),
-        Style::default().fg(palette.border),
+        format!("│ {text}{} │", " ".repeat(padding)),
+        Style::default().fg(color),
     ))
 }
 
 fn draw_header(app: &App, frame: &mut Frame, area: Rect, palette: &theme::Palette) {
-    let spinner: String = if app.phase == Phase::Summary {
+    let width = area.width as usize;
+    let spinner = if app.phase == Phase::Summary {
         "✓".to_owned()
     } else {
         SPINNER[(app.tick / 4) as usize % SPINNER.len()].to_string()
     };
-    let logo_style = Style::default()
-        .fg(palette.accent)
-        .add_modifier(Modifier::BOLD);
-    let info_style = Style::default().fg(palette.muted);
-    let info = format!(
-        " {spinner}  {} download{}  ·  {}",
+    let status = format!(
+        "{spinner}  {} download{}  ·  {}",
         app.jobs.len(),
         if app.jobs.len() == 1 { "" } else { "s" },
         app.message
     );
-    let line1 = Line::from(vec![
-        Span::styled(format!(" {}", LOGO[0]), logo_style),
-        Span::styled(info, info_style),
-    ]);
-    let line2 = Line::from(Span::styled(format!(" {}", LOGO[1]), logo_style));
-    let width = area.width.saturating_sub(1) as usize;
-
     let elapsed = app.started.elapsed().as_secs();
     let average = human_speed(app.average_speed());
-    let flow = if app.phase == Phase::Summary {
+    let speed = if app.phase == Phase::Summary {
         average.clone()
     } else {
         human_speed(app.total_speed)
     };
     let total = human_bytes(app.total_bytes);
-    let gauge_width = width.saturating_sub(58).clamp(8, 24);
+    let gauge_width = width.saturating_sub(62).clamp(8, 24);
     let effective = if app.phase == Phase::Summary {
         app.average_speed()
     } else {
@@ -87,36 +117,45 @@ fn draw_header(app: &App, frame: &mut Frame, area: Rect, palette: &theme::Palett
     };
     let filled = ((effective / 24_000_000.0).clamp(0.0, 1.0) * gauge_width as f64) as usize;
     let gauge: String = (0..gauge_width)
-        .map(|i| if i < filled { '━' } else { '·' })
+        .map(|index| if index < filled { '━' } else { '·' })
         .collect();
-    let flow_line = Line::from(vec![
-        Span::styled(" flow ", Style::default().fg(palette.muted)),
-        Span::styled(gauge, Style::default().fg(palette.accent)),
-        Span::styled(
-            format!(" {flow:>12}  avg {average:>12}  {total:>10}  {elapsed:>3}s"),
-            Style::default().fg(palette.text),
-        ),
-    ]);
+
+    let banner = format!("{}   {}", LOGO[0], status);
+    let gauge_row = format!("{}   speed {}", LOGO[1], gauge);
+    let stats_row = format!("{speed:>12}  avg {average:>12}  {total:>10}  {elapsed:>3}s");
     frame.render_widget(
         Paragraph::new(vec![
-            top_border(width, palette),
-            line1,
-            line2,
-            flow_line,
-            bottom_border(width, palette),
+            top_line(width, palette),
+            panel_line(&banner, width, palette, palette.accent),
+            panel_line(&gauge_row, width, palette, palette.accent),
+            panel_line(&stats_row, width, palette, palette.text),
+            bottom_line(width, palette),
         ]),
         area,
     );
 }
 
+fn sparkline(history: Option<&Vec<f64>>, width: usize) -> String {
+    let Some(history) = history else {
+        return " ".repeat(width);
+    };
+    let recent: Vec<f64> = history.iter().rev().take(width).cloned().collect();
+    let max = recent.iter().copied().fold(1.0, f64::max);
+    let mut out = String::with_capacity(width);
+    for value in recent.iter().rev() {
+        let level = ((*value / max).clamp(0.0, 1.0) * 7.0) as usize;
+        out.push(SUBCELL[level.min(7)]);
+    }
+    format!("{out:<width$}")
+}
+
 fn draw_jobs(app: &App, frame: &mut Frame, area: Rect, palette: &theme::Palette) {
-    let width = area.width.saturating_sub(1) as usize;
+    let width = area.width as usize;
     let mut lines: Vec<Line> = Vec::new();
     for (index, job) in app.jobs.iter().enumerate() {
         let Some(progress) = app.progress.get(&job.id) else {
             continue;
         };
-        let selected = index == app.selected;
         let badge = badge(&job.media.platform);
         let color = match progress.state {
             JobState::Done => palette.success,
@@ -124,7 +163,7 @@ fn draw_jobs(app: &App, frame: &mut Frame, area: Rect, palette: &theme::Palette)
             JobState::Paused => palette.warning,
             _ => palette.text,
         };
-        let overhead = 3 + 3 + 15 + 5 + 12 + 12 + 8 + 8;
+        let overhead = 4 + 3 + 15 + 5 + 12 + 10 + 12 + 8 + 9;
         let title_width = width.saturating_sub(overhead).max(10);
         let size = match progress.total {
             Some(total) => format!(
@@ -134,7 +173,6 @@ fn draw_jobs(app: &App, frame: &mut Frame, area: Rect, palette: &theme::Palette)
             ),
             None => human_bytes(progress.downloaded),
         };
-        let percent = format!("{:>3}%", (progress.fraction() * 100.0) as u32);
         let speed = if progress.state == JobState::Running {
             human_speed(progress.speed)
         } else {
@@ -142,19 +180,23 @@ fn draw_jobs(app: &App, frame: &mut Frame, area: Rect, palette: &theme::Palette)
         };
         let eta = progress.eta.map(format_eta).unwrap_or_else(|| "—".into());
         let row = format!(
-            "{} {badge:<3} {:<tw$} {size:>15} {percent:>4} {} {speed:>12} {eta:>7}",
+            "{} {badge:<3} {:<tw$} {size:>15} {:>3}% {} {} {speed:>12} {eta:>7}",
             progress.state.glyph(),
-            truncate(&progress.label, title_width),
+            truncate_display(&progress.label, title_width),
+            (progress.fraction() * 100.0) as u32,
             subcell_bar(progress.fraction(), 10),
+            sparkline(app.history.get(&job.id), 8),
             tw = title_width
         );
         lines.push(Line::from(Span::styled(
             row,
-            Style::default().fg(color).add_modifier(if selected {
-                Modifier::BOLD
-            } else {
-                Modifier::empty()
-            }),
+            Style::default()
+                .fg(color)
+                .add_modifier(if index == app.selected {
+                    Modifier::BOLD
+                } else {
+                    Modifier::empty()
+                }),
         )));
         if job.media.platform.contains('→') {
             lines.push(Line::from(Span::styled(
@@ -176,7 +218,7 @@ fn draw_jobs(app: &App, frame: &mut Frame, area: Rect, palette: &theme::Palette)
 }
 
 fn draw_summary(app: &App, frame: &mut Frame, area: Rect, palette: &theme::Palette) {
-    let width = area.width.saturating_sub(1) as usize;
+    let width = area.width as usize;
     let done = app
         .progress
         .values()
@@ -190,10 +232,10 @@ fn draw_summary(app: &App, frame: &mut Frame, area: Rect, palette: &theme::Palet
     let bytes: u64 = app.progress.values().map(|p| p.downloaded).sum();
     let elapsed = app.started.elapsed().as_secs();
     let mut lines = vec![
-        top_border(width, palette),
-        Line::from(Span::styled(
-            format!(
-                " {} {} file{} · {} · {} · avg {}",
+        top_line(width, palette),
+        panel_line(
+            &format!(
+                "{} {} file{} · {} · {} · avg {}",
                 if failed == 0 { "✓" } else { "!" },
                 done,
                 if done == 1 { "" } else { "s" },
@@ -201,15 +243,14 @@ fn draw_summary(app: &App, frame: &mut Frame, area: Rect, palette: &theme::Palet
                 format_eta(elapsed as f64),
                 human_speed(app.average_speed())
             ),
-            Style::default()
-                .fg(if failed == 0 {
-                    palette.success
-                } else {
-                    palette.warning
-                })
-                .add_modifier(Modifier::BOLD),
-        )),
-        Line::from(""),
+            width,
+            palette,
+            if failed == 0 {
+                palette.success
+            } else {
+                palette.warning
+            },
+        ),
     ];
     for job in &app.jobs {
         let Some(progress) = app.progress.get(&job.id) else {
@@ -220,7 +261,11 @@ fn draw_summary(app: &App, frame: &mut Frame, area: Rect, palette: &theme::Palet
         } else {
             "✗"
         };
-        let path = truncate(&job.destination.to_string_lossy(), width.saturating_sub(28));
+        let name = job
+            .destination
+            .file_name()
+            .map(|value| value.to_string_lossy().into_owned())
+            .unwrap_or_else(|| job.destination.to_string_lossy().into_owned());
         let seconds = app
             .finished_at
             .get(&job.id)
@@ -231,33 +276,48 @@ fn draw_summary(app: &App, frame: &mut Frame, area: Rect, palette: &theme::Palet
         } else {
             palette.error
         };
-        lines.push(Line::from(Span::styled(
-            format!(
-                " {mark} {path:<w$} {}  {}",
+        lines.push(panel_line(
+            &format!(
+                "{mark} {name}  {}  {}",
                 human_bytes(progress.downloaded),
-                format_eta(seconds),
-                w = width.saturating_sub(28)
+                format_eta(seconds)
             ),
-            Style::default().fg(color),
-        )));
+            width,
+            palette,
+            color,
+        ));
+    }
+    if let Some(folder) = app.jobs.first().and_then(|job| job.destination.parent()) {
+        lines.push(panel_line(
+            &format!("saved in {}", folder.display()),
+            width,
+            palette,
+            palette.muted,
+        ));
     }
     if app.jobs.iter().any(|job| job.media.platform.contains('→')) {
-        lines.push(Line::from(Span::styled(
-            "  audio matched on YouTube Music from a public source, not Spotify/Apple",
-            Style::default().fg(palette.muted),
-        )));
+        lines.push(panel_line(
+            "audio matched on YouTube Music from a public source, not Spotify/Apple",
+            width,
+            palette,
+            palette.muted,
+        ));
     }
-    lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled(
-        "  press any key to quit",
-        Style::default().fg(palette.muted),
-    )));
-    lines.push(bottom_border(width, palette));
+    lines.push(panel_line(
+        "press any key to quit",
+        width,
+        palette,
+        palette.muted,
+    ));
+    lines.push(bottom_line(width, palette));
     frame.render_widget(Paragraph::new(lines), area);
 }
 
 fn draw_footer(frame: &mut Frame, area: Rect, palette: &theme::Palette) {
-    let width = area.width.saturating_sub(1) as usize;
+    let rule = Line::from(Span::styled(
+        "─".repeat(area.width.saturating_sub(1) as usize),
+        Style::default().fg(palette.border),
+    ));
     let keys = Line::from(vec![
         Span::styled(
             " q ",
@@ -281,16 +341,7 @@ fn draw_footer(frame: &mut Frame, area: Rect, palette: &theme::Palette) {
         ),
         Span::styled("select", Style::default().fg(palette.muted)),
     ]);
-    frame.render_widget(
-        Paragraph::new(vec![
-            Line::from(Span::styled(
-                "─".repeat(width),
-                Style::default().fg(palette.border),
-            )),
-            keys,
-        ]),
-        area,
-    );
+    frame.render_widget(Paragraph::new(vec![rule, keys]), area);
 }
 
 fn badge(platform: &str) -> &'static str {
@@ -342,15 +393,6 @@ fn subcell_bar(fraction: f64, width: usize) -> String {
     out
 }
 
-fn truncate(value: &str, max: usize) -> String {
-    if value.chars().count() <= max {
-        return value.to_owned();
-    }
-    let mut out: String = value.chars().take(max.saturating_sub(1)).collect();
-    out.push('…');
-    out
-}
-
 fn format_eta(seconds: f64) -> String {
     let seconds = seconds.round().max(0.0) as u64;
     if seconds < 60 {
@@ -359,5 +401,61 @@ fn format_eta(seconds: f64) -> String {
         format!("{}m{:02}s", seconds / 60, seconds % 60)
     } else {
         format!("{}h{:02}m", seconds / 3600, (seconds % 3600) / 60)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::{DownloadJob, JobProgress, Media, MediaFormat, MediaKind};
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    fn test_app() -> App {
+        let job = DownloadJob {
+            id: 0,
+            media: Media::new(
+                "YouTube",
+                "https://example.test/watch",
+                "Emoji 🎬 title with wide chars",
+            ),
+            format: MediaFormat::new("f1", "https://example.test/clip.mp4", MediaKind::Video),
+            destination: std::path::PathBuf::from("/tmp/ratata/clip.mp4"),
+        };
+        let mut app = App::new(vec![job]);
+        app.update(JobProgress {
+            id: 0,
+            label: "Emoji 🎬 title with wide chars".into(),
+            downloaded: 50_000_000,
+            total: Some(100_000_000),
+            speed: 8_000_000.0,
+            state: JobState::Done,
+            error: None,
+            segments: vec![true, false],
+            eta: Some(6.0),
+        });
+        app
+    }
+
+    #[test]
+    fn panels_have_borders_at_80_and_100_columns() {
+        for columns in [80u16, 100u16] {
+            let app = test_app();
+            let mut terminal = Terminal::new(TestBackend::new(columns, 24)).unwrap();
+            terminal.draw(|frame| draw(&app, frame)).unwrap();
+            let buffer = terminal.backend().buffer();
+            for row in 0..5 {
+                let first = buffer[(0, row)].symbol();
+                let last = buffer[(columns - 1, row)].symbol();
+                assert!(
+                    matches!(first, "╭" | "│" | "╰"),
+                    "bad left border at {columns}/{row}: {first}"
+                );
+                assert!(
+                    matches!(last, "╮" | "│" | "╯"),
+                    "bad right border at {columns}/{row}: {last}"
+                );
+            }
+        }
     }
 }

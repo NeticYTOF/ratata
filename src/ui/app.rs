@@ -63,7 +63,7 @@ pub(crate) async fn run_screen(
 }
 
 impl App {
-    fn new(jobs: Vec<DownloadJob>) -> Self {
+    pub(crate) fn new(jobs: Vec<DownloadJob>) -> Self {
         let progress = jobs
             .iter()
             .map(|job| {
@@ -147,7 +147,7 @@ impl App {
     }
 
     /// Rate is measured from actual byte deltas, not from reporter ticks.
-    fn update(&mut self, progress: JobProgress) {
+    pub(crate) fn update(&mut self, progress: JobProgress) {
         let now = Instant::now();
         let (previous_bytes, previous_time) = self
             .last_seen

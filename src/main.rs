@@ -120,13 +120,15 @@ async fn run() -> Result<()> {
         let mut command = Cli::command();
         for name in [
             "format",
-            "no-tui",
+            "no_tui",
             "segments",
             "retries",
-            "audio-only",
-            "list-formats",
-            "all-formats",
+            "audio_only",
+            "list_formats",
+            "all_formats",
             "cookies",
+            "keep_source",
+            "cookies_from_browser",
             "overwrite",
             "verbose",
         ] {
@@ -203,6 +205,12 @@ async fn run() -> Result<()> {
 
     if urls.is_empty() {
         if io::stdin().is_terminal() {
+            println!("  ▄▀█ █▄▄ ▀█▀ ▄▀█ ▄▀█ ▀█▀");
+            println!("  █▀█ █▄█  █  █▀█ █▀█  █\n");
+            println!("  Paste a link from YouTube, Instagram, Spotify and more.");
+            println!(
+                "  Examples: ratata https://youtube.com/watch?v=...  |  ratata --mp3 https://soundcloud.com/...\n"
+            );
             urls.push(prompt_url()?);
             if !mp3_mode && !cli.audio_only && !cli.all_formats && !cli.list_formats {
                 mp3_mode = prompt_mp3()?;

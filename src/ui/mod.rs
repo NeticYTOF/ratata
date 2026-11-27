@@ -47,10 +47,8 @@ pub async fn run(jobs: Vec<DownloadJob>, config: Config, client: Arc<Client>) ->
     execute!(screen, LeaveAlternateScreen, crossterm::cursor::Show)?;
 
     for handle in handles {
-        match handle.await {
-            Ok(Ok(path)) => println!("  ✓ saved {}", path.display()),
-            Ok(Err(error)) => eprintln!("  ✗ {}", error),
-            Err(error) => eprintln!("  ✗ {}", error),
+        if let Ok(Err(error)) = handle.await {
+            eprintln!("  ✗ {error}");
         }
     }
     result
