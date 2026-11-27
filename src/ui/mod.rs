@@ -2,6 +2,15 @@ pub mod app;
 pub mod render;
 pub mod theme;
 
+/// Five-row block banner used by both the interactive UI and the launch prompt.
+pub const LOGO: [&str; 5] = [
+    "█████ █████ █████ █████ █████ █████",
+    "█   █ █   █   █   █   █ █   █ █   █",
+    "█████ █████   █   █████   █   █████",
+    "█  █  █   █   █   █   █ █   █ █   █",
+    "█   █ █   █ █████ █   █ █████ █   █",
+];
+
 use crate::Config;
 use crate::download::DownloadManager;
 use crate::model::{DownloadJob, JobProgress};

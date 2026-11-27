@@ -1,3 +1,4 @@
+use super::LOGO;
 use super::app::{App, Phase};
 use super::theme;
 use crate::download::{human_bytes, human_speed};
@@ -10,13 +11,6 @@ use ratatui::widgets::Paragraph;
 use unicode_width::UnicodeWidthStr;
 
 const SPINNER: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-const LOGO: [&str; 5] = [
-    "█████ █████ █████ █████ █████ █████",
-    "█   █ █   █   █   █   █ █   █ █   █",
-    "█████ █████   █   █████   █   █████",
-    "█  █  █   █   █   █   █ █   █ █   █",
-    "█   █ █   █ █████ █   █ █████ █   █",
-];
 const SUBCELL: [char; 8] = [' ', '▏', '▎', '▍', '▌', '▋', '▊', '▉'];
 
 pub(crate) fn draw(app: &App, frame: &mut Frame) {

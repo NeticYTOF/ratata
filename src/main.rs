@@ -205,9 +205,7 @@ async fn run() -> Result<()> {
 
     if urls.is_empty() {
         if io::stdin().is_terminal() {
-            println!("  ███ ▀█▀ ███ ▀█▀ ███ ▀█▀");
-            println!("  ██▀ ███ ▀█▀ ███ ▀█▀ ███");
-            println!("  ███ ███ ▀█▀ ███ ▀█▀ ███\n");
+            print_banner();
             println!("  Paste a link from YouTube, Instagram, Spotify and more.");
             println!(
                 "  Examples: ratata https://youtube.com/watch?v=...  |  ratata --mp3 https://soundcloud.com/...\n"
@@ -368,6 +366,20 @@ fn clean_music_title(title: &str) -> String {
     cleaned.to_owned()
 }
 
+fn print_banner() {
+    let colored = std::env::var("NO_COLOR").is_err();
+    if colored {
+        ratata::ui::enable_color();
+    }
+    for row in ratata::ui::LOGO {
+        if colored {
+            println!("\x1b[36m  {row}\x1b[0m");
+        } else {
+            println!("  {row}");
+        }
+    }
+    println!();
+}
 fn prompt_url() -> Result<String> {
     print!("Paste a link to download: ");
     io::stdout().flush()?;
@@ -503,5 +515,13 @@ mod tests {
             "Never Gonna Give You Up"
         );
         assert_eq!(clean_music_title("Song (Official Audio)"), "Song");
+    }
+
+    #[test]
+    fn launch_banner_matches_ui_banner() {
+        assert_eq!(ratata::ui::LOGO.len(), 5);
+        for row in ratata::ui::LOGO {
+            assert_eq!(row.chars().count(), 35, "banner row: {row}");
+        }
     }
 }
