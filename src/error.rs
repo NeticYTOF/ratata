@@ -20,7 +20,7 @@ pub fn sanitize_filename(name: &str) -> String {
     let cleaned: String = name
         .chars()
         .map(|c| match c {
-            '<' | '>' | ':' | '"' | '|' | '?' | '*' | '\n' | '\r' | '\t' => '_',
+            '<' | '>' | ':' | '"' | '|' | '?' | '*' | '/' | '\\' | '\n' | '\r' | '\t' => '_',
             c if c.is_control() => '_',
             c => c,
         })
@@ -35,5 +35,20 @@ pub fn sanitize_filename(name: &str) -> String {
         trimmed.chars().take(140).collect()
     } else {
         trimmed.to_owned()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strips_path_separators_from_tweet_titles() {
+        let title = "watch https://youtu.be/abc?x=1\nnow";
+        let safe = sanitize_filename(title);
+        assert!(!safe.contains('/'));
+        assert!(!safe.contains('\\'));
+        assert!(!safe.contains('\n'));
+        assert!(safe.contains("https"));
     }
 }
