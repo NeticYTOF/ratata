@@ -1,7 +1,10 @@
+pub mod bilibili;
 pub mod dailymotion;
+pub mod facebook;
 pub mod galleries;
 pub mod generic;
 pub mod instagram;
+pub mod kick;
 pub mod reddit;
 pub mod soundcloud;
 pub mod streamable;
@@ -62,6 +65,15 @@ pub async fn extract(url: &str, client: &Client, config: &Config) -> Result<Medi
     }
     if host == "pinterest.com" || host.ends_with(".pinterest.com") {
         return galleries::pinterest(&parsed, client).await;
+    }
+    if host == "bilibili.com" || host.ends_with(".bilibili.com") || host == "b23.tv" {
+        return bilibili::extract(&parsed, client).await;
+    }
+    if host == "kick.com" || host.ends_with(".kick.com") {
+        return kick::extract(&parsed, client).await;
+    }
+    if host == "facebook.com" || host.ends_with(".facebook.com") || host == "fb.me" {
+        return facebook::extract(&parsed, client).await;
     }
     generic::extract(&parsed, client).await
 }

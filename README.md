@@ -38,6 +38,7 @@ ratata formats URL
 # Pick a format or audio only
 ratata download URL --format 18
 ratata download URL --audio-only
+ratata download URL --all-formats
 
 # Control speed
 ratata download URL --segments 12 --retries 6
@@ -67,6 +68,9 @@ Multiple URLs are downloaded concurrently. Existing files are never overwritten;
 | Twitch clips | `videoQualities` from clip pages |
 | Streamable | Public video API |
 | Imgur / Pinterest | Embed pages, Open Graph media |
+| Bilibili | Public view + playurl APIs with Referer |
+| Kick | Videos and clips from public API |
+| Facebook | Public video embed playable URLs |
 | Any direct media URL | mp4, webm, mp3, images, m3u8, mpd |
 | Any HTML page | `og:video`, `og:image`, JSON-LD, `<video>`, `<source>`, `<img>` |
 
