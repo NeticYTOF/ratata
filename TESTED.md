@@ -69,4 +69,5 @@ Build and tests passed (36 unit + 2 integration). Reported failures and current 
 | Bilibili | blocked from datacenter IP | Full browser headers, buvid3/buvid4 from `finger/spi`, page priming and `__playinfo__` fallback still receive HTTP 412. |
 | Reddit | blocked from datacenter IP | Expected 403; fallbacks retained. |
 | TUI | verified offline | Rendering tests at 110 and 80 columns; summary stays open on TTY and non-TTY exits normally. |
-| Release binaries | verified | v0.1.0: Windows x86_64 zip (`--version`/`--help` OK); Linux static musl PIE (`file` verified), refreshed SHA256SUMS uploaded. |
+| Streamable | fixed | Linux re-test at cd22509 found `https://https//...`; central URL normalizer now repairs that shape for every media format, with a unit test. |
+| Release binaries | fixed | Linux tar.gz repacked with mode 0755 (`-rwxr-xr-x` verified); Windows/Linux archives rebuilt from latest main and SHA256SUMS refreshed on the release. |
