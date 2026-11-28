@@ -34,6 +34,7 @@ Updated: 2026-11-27
 - `Esc` returns to the first prompt instead of quitting; `q` still quits.
 - Public YouTube playlist links queue all videos; batch URLs can be extended after `Esc`.
 - Removed the superseded `BRIEF*.md` files.
+- Spotify and Apple Music public playlist/album links queue every track; parsers cover embedded collection JSON.
 
 ## Speed benchmarks (`scripts/bench.py`, Windows, release build)
 

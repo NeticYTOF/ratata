@@ -59,6 +59,36 @@ pub fn apple_id(url: &Url) -> Option<String> {
         .map(str::to_owned)
 }
 
+fn spotify_collection(url: &Url) -> Option<(String, String)> {
+    let segments: Vec<&str> = url
+        .path_segments()?
+        .filter(|segment| !segment.is_empty())
+        .collect();
+    for (index, segment) in segments.iter().enumerate() {
+        if matches!(*segment, "playlist" | "album")
+            && let Some(id) = segments.get(index + 1)
+            && !id.is_empty()
+        {
+            return Some(((*segment).to_owned(), (*id).to_owned()));
+        }
+    }
+    None
+}
+
+fn apple_playlist(url: &Url) -> Option<String> {
+    let segments: Vec<&str> = url
+        .path_segments()?
+        .filter(|segment| !segment.is_empty())
+        .collect();
+    if segments.contains(&"playlist") {
+        return segments
+            .last()
+            .filter(|id| !id.is_empty())
+            .map(|id| (*id).to_owned());
+    }
+    None
+}
+
 pub async fn metadata(url: &Url, client: &Client) -> Result<Vec<TrackMetadata>> {
     if is_spotify(url) {
         spotify_metadata(url, client).await
@@ -70,6 +100,25 @@ pub async fn metadata(url: &Url, client: &Client) -> Result<Vec<TrackMetadata>> 
 }
 
 async fn spotify_metadata(url: &Url, client: &Client) -> Result<Vec<TrackMetadata>> {
+    if let Some((kind, id)) = spotify_collection(url) {
+        let embed = format!("https://open.spotify.com/embed/{kind}/{id}");
+        if let Ok(page) = get_text(
+            client,
+            &embed,
+            &browser_headers("https://open.spotify.com/"),
+        )
+        .await
+            && let Some(data) = extract_json_after(&page, "__NEXT_DATA__")
+        {
+            let tracks = parse_spotify_collection(&data, &format!("Spotify {kind}"));
+            if !tracks.is_empty() {
+                return Ok(tracks);
+            }
+        }
+        return Err(anyhow::anyhow!(
+            "No public tracks found in this Spotify {kind}"
+        ));
+    }
     let oembed = format!(
         "https://open.spotify.com/oembed?url={}",
         percent_encoding::utf8_percent_encode(url.as_str(), percent_encoding::NON_ALPHANUMERIC)
@@ -175,7 +224,219 @@ fn parse_spotify_embed(html: &str) -> SpotifyEmbed {
     }
 }
 
+fn extract_json_after(html: &str, marker: &str) -> Option<Value> {
+    let start = html.find(marker)?;
+    let open = html[start..].find('{')? + start;
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (offset, ch) in html[open..].char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match ch {
+            '"' => in_string = true,
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return serde_json::from_str(&html[open..open + offset + 1]).ok();
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn push_unique(tracks: &mut Vec<TrackMetadata>, track: TrackMetadata) {
+    let key = format!(
+        "{}|{}",
+        track.title.to_ascii_lowercase(),
+        track.artist.to_ascii_lowercase()
+    );
+    let duplicate = tracks.iter().any(|existing| {
+        format!(
+            "{}|{}",
+            existing.title.to_ascii_lowercase(),
+            existing.artist.to_ascii_lowercase()
+        ) == key
+    });
+    if !duplicate {
+        tracks.push(track);
+    }
+}
+
+fn parse_spotify_collection(value: &Value, source: &str) -> Vec<TrackMetadata> {
+    fn walk(value: &Value, tracks: &mut Vec<TrackMetadata>, source: &str) {
+        match value {
+            Value::Object(map) => {
+                if let Some(track) = map.get("track").and_then(Value::as_object)
+                    && let Some(title) = track.get("name").and_then(Value::as_str)
+                    && !title.is_empty()
+                {
+                    let artist = track
+                        .get("artists")
+                        .and_then(Value::as_array)
+                        .map(|artists| {
+                            artists
+                                .iter()
+                                .filter_map(|artist| artist["name"].as_str())
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        })
+                        .unwrap_or_default();
+                    let album = track["album"]["name"].as_str().unwrap_or("");
+                    let year = track["album"]["release_date"]
+                        .as_str()
+                        .and_then(|date| date.get(..4))
+                        .and_then(|year| year.parse().ok());
+                    let track_number = track["track_number"]
+                        .as_u64()
+                        .and_then(|n| u32::try_from(n).ok());
+                    let duration = track["duration_ms"].as_u64().map(|ms| ms as f64 / 1000.0);
+                    let artwork = track["album"]["images"]
+                        .as_array()
+                        .and_then(|images| images.first())
+                        .and_then(|image| image["url"].as_str())
+                        .map(str::to_owned);
+                    push_unique(
+                        tracks,
+                        TrackMetadata {
+                            title: title.to_owned(),
+                            artist,
+                            album: album.to_owned(),
+                            year,
+                            track: track_number,
+                            duration,
+                            artwork,
+                            source: source.to_owned(),
+                        },
+                    );
+                }
+                for nested in map.values() {
+                    walk(nested, tracks, source);
+                }
+            }
+            Value::Array(items) => {
+                for nested in items {
+                    walk(nested, tracks, source);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut tracks = Vec::new();
+    walk(value, &mut tracks, source);
+    tracks
+}
+
+fn parse_apple_collection(value: &Value, source: &str) -> Vec<TrackMetadata> {
+    fn walk(value: &Value, tracks: &mut Vec<TrackMetadata>, source: &str) {
+        match value {
+            Value::Object(map) => {
+                let title = map
+                    .get("trackName")
+                    .or_else(|| map.get("name"))
+                    .and_then(Value::as_str)
+                    .filter(|title| !title.is_empty());
+                let artist = map
+                    .get("artistName")
+                    .or_else(|| map.get("artist"))
+                    .and_then(Value::as_str)
+                    .filter(|artist| !artist.is_empty());
+                if let (Some(title), Some(artist)) = (title, artist)
+                    && map.get("@type").and_then(Value::as_str) != Some("Playlist")
+                {
+                    let duration = map
+                        .get("trackTimeMillis")
+                        .and_then(Value::as_u64)
+                        .map(|ms| ms as f64 / 1000.0);
+                    let artwork = map
+                        .get("artworkUrl100")
+                        .or_else(|| map.get("image"))
+                        .and_then(Value::as_str)
+                        .map(str::to_owned);
+                    push_unique(
+                        tracks,
+                        TrackMetadata {
+                            title: title.to_owned(),
+                            artist: artist.to_owned(),
+                            album: map
+                                .get("collectionName")
+                                .and_then(Value::as_str)
+                                .unwrap_or("")
+                                .to_owned(),
+                            year: None,
+                            track: map
+                                .get("trackNumber")
+                                .and_then(Value::as_u64)
+                                .and_then(|n| u32::try_from(n).ok()),
+                            duration,
+                            artwork,
+                            source: source.to_owned(),
+                        },
+                    );
+                    return;
+                }
+                for nested in map.values() {
+                    walk(nested, tracks, source);
+                }
+            }
+            Value::Array(items) => {
+                for nested in items {
+                    walk(nested, tracks, source);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut tracks = Vec::new();
+    walk(value, &mut tracks, source);
+    tracks
+}
+
 async fn apple_metadata(url: &Url, client: &Client) -> Result<Vec<TrackMetadata>> {
+    if apple_playlist(url).is_some() {
+        let page = get_text(
+            client,
+            url.as_str(),
+            &browser_headers("https://music.apple.com/"),
+        )
+        .await?;
+        let mut tracks = Vec::new();
+        for marker in ["__NEXT_DATA__", "serializedServerData", "music-data"] {
+            if let Some(json) = extract_json_after(&page, marker) {
+                tracks = parse_apple_collection(&json, "Apple Music playlist");
+                if !tracks.is_empty() {
+                    break;
+                }
+            }
+        }
+        if tracks.is_empty()
+            && let Ok(regex) =
+                regex::Regex::new(r#"(?s)<script[^>]*application/ld\+json[^>]*>(.*?)</script>"#)
+        {
+            for capture in regex.captures_iter(&page) {
+                if let Ok(json) = serde_json::from_str::<Value>(&capture[1]) {
+                    tracks.extend(parse_apple_collection(&json, "Apple Music playlist"));
+                }
+            }
+        }
+        if tracks.is_empty() {
+            return Err(anyhow::anyhow!(
+                "No public tracks found in this Apple Music playlist"
+            ));
+        }
+        return Ok(tracks);
+    }
     let id = apple_id(url).context("Apple Music link has no track or album id")?;
     let endpoint = format!("https://itunes.apple.com/lookup?id={id}&entity=song&limit=200");
     let json = tokio::time::timeout(
@@ -531,5 +792,44 @@ mod tests {
         let ranked = rank_candidates(&track, &candidates);
         assert_eq!(ranked[0].video_id, "official");
         assert_eq!(ranked[1].video_id, "cover");
+    }
+
+    #[test]
+    fn parses_spotify_playlist_tracks() {
+        let html = r#"<script>window.__NEXT_DATA__ = {"props":{"tracks":{"items":[{"track":{"name":"Song One","artists":[{"name":"Artist A"}],"album":{"name":"Album","release_date":"2020-01-01","images":[{"url":"https://cover/1.jpg"}]},"duration_ms":180000,"track_number":2}}]}}};</script>"#;
+        let data = extract_json_after(html, "__NEXT_DATA__").unwrap();
+        let tracks = parse_spotify_collection(&data, "Spotify playlist");
+        assert_eq!(tracks.len(), 1);
+        assert_eq!(tracks[0].title, "Song One");
+        assert_eq!(tracks[0].artist, "Artist A");
+        assert_eq!(tracks[0].year, Some(2020));
+        assert_eq!(tracks[0].source, "Spotify playlist");
+    }
+
+    #[test]
+    fn parses_apple_playlist_tracks() {
+        let data: Value = serde_json::from_str(
+            r#"{"itemListElement":[{"trackName":"Song Two","artistName":"Artist B","collectionName":"Album","trackTimeMillis":200000,"artworkUrl100":"https://cover/2.jpg"}]}"#,
+        )
+        .unwrap();
+        let tracks = parse_apple_collection(&data, "Apple Music playlist");
+        assert_eq!(tracks.len(), 1);
+        assert_eq!(tracks[0].title, "Song Two");
+        assert_eq!(tracks[0].artist, "Artist B");
+        assert_eq!(tracks[0].source, "Apple Music playlist");
+    }
+
+    #[test]
+    fn finds_spotify_and_apple_collection_ids() {
+        assert_eq!(
+            spotify_collection(&Url::parse("https://open.spotify.com/playlist/abc123").unwrap()),
+            Some(("playlist".into(), "abc123".into()))
+        );
+        assert_eq!(
+            apple_playlist(
+                &Url::parse("https://music.apple.com/us/playlist/my-mix/pl.abc123").unwrap()
+            ),
+            Some("pl.abc123".into())
+        );
     }
 }

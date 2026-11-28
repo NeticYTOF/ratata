@@ -28,8 +28,8 @@ ratata info https://www.youtube.com/watch?v=...
 
 Paste a link and Ratata saves the best version to your Downloads folder. With no
 arguments in a terminal it asks for a link and whether you want Video or MP3.
-Public YouTube playlist links queue every video; several URLs can be pasted in
-one command or added later after pressing `Esc`.
+Public YouTube, Spotify and Apple Music playlist/album links queue every track.
+Several URLs can be pasted in one command or added later after pressing `Esc`.
 
 - `--mp3` saves tagged MP3 (192 kbps, ID3 tags and cover art). Needs `ffmpeg`.
 - Spotify and Apple Music links are **not downloaded from those services**. Ratata
