@@ -115,6 +115,98 @@ pub async fn extract(url: &Url, client: &Client, _config: &Config) -> Result<Med
     Err(RatataError::Extraction(format!("YouTube refused video {id} ({last_status}){hint}")).into())
 }
 
+pub fn is_playlist(url: &Url) -> bool {
+    if !url
+        .host_str()
+        .is_some_and(|host| host.contains("youtube.com"))
+    {
+        return false;
+    }
+    url.path().ends_with("/playlist")
+        || (playlist_id(url).is_some() && !url.query_pairs().any(|(key, _)| key == "v"))
+}
+
+pub fn playlist_id(url: &Url) -> Option<String> {
+    url.query_pairs()
+        .find(|(key, value)| key == "list" && !value.is_empty())
+        .map(|(_, value)| value.into_owned())
+}
+
+fn collect_playlist_ids(value: &Value, ids: &mut Vec<String>) {
+    match value {
+        Value::Object(map) => {
+            if let Some(renderer) = map.get("playlistVideoRenderer")
+                && let Some(id) = renderer["videoId"].as_str()
+                && id.len() == 11
+                && !ids.iter().any(|existing| existing == id)
+            {
+                ids.push(id.to_owned());
+            }
+            for nested in map.values() {
+                collect_playlist_ids(nested, ids);
+            }
+        }
+        Value::Array(items) => {
+            for nested in items {
+                collect_playlist_ids(nested, ids);
+            }
+        }
+        _ => {}
+    }
+}
+
+pub async fn playlist_video_ids(
+    url: &Url,
+    client: &Client,
+    config: &Config,
+) -> Result<Vec<String>> {
+    let playlist_id =
+        playlist_id(url).ok_or_else(|| RatataError::UnsupportedUrl(url.to_string()))?;
+    let mut ids = Vec::new();
+    let endpoint =
+        format!("https://www.youtube.com/youtubei/v1/playlist?key={DEFAULT_KEY}&prettyPrint=false");
+    let body = json!({
+        "context": {"client": {"clientName": "WEB", "clientVersion": "2.20250101.00.00", "hl": "en"}},
+        "playlistId": playlist_id,
+    });
+    if let Ok(response) = post_json(
+        client,
+        &endpoint,
+        &body,
+        &browser_headers("https://www.youtube.com/"),
+    )
+    .await
+    {
+        collect_playlist_ids(&response, &mut ids);
+    }
+    if ids.is_empty() {
+        let page = get_text(
+            client,
+            url.as_str(),
+            &browser_headers("https://www.youtube.com/"),
+        )
+        .await
+        .unwrap_or_default();
+        if let Ok(regex) = Regex::new(r#"playlistVideoRenderer":\{"videoId":"([A-Za-z0-9_-]{11})""#)
+        {
+            for capture in regex.captures_iter(&page) {
+                if let Some(id) = capture.get(1)
+                    && !ids.iter().any(|existing| existing == id.as_str())
+                {
+                    ids.push(id.as_str().to_owned());
+                }
+            }
+        }
+    }
+    let _ = config;
+    if ids.is_empty() {
+        return Err(
+            RatataError::Extraction("No public videos found in this playlist".into()).into(),
+        );
+    }
+    Ok(ids)
+}
+
 fn video_id(url: &Url) -> Result<String> {
     if let Some(host) = url.host_str()
         && (host == "youtu.be" || host == "yt.be")
@@ -260,5 +352,41 @@ mod tests {
     fn parses_video_id_from_short_url() {
         let url = Url::parse("https://youtu.be/dQw4w9WgXcQ").unwrap();
         assert_eq!(video_id(&url).unwrap(), "dQw4w9WgXcQ");
+    }
+
+    #[test]
+    fn parses_playlist_video_ids() {
+        let response = json!({
+            "contents": {
+                "twoColumnBrowseResultsRenderer": {
+                    "tabs": [{
+                        "tabRenderer": {
+                            "content": {
+                                "sectionListRenderer": {
+                                    "contents": [{
+                                        "itemSectionRenderer": {
+                                            "contents": [{
+                                                "playlistVideoListRenderer": {
+                                                    "contents": [
+                                                        {"playlistVideoRenderer": {"videoId": "dQw4w9WgXcQ"}},
+                                                        {"playlistVideoRenderer": {"videoId": "aqz-KE-bpKQ"}}
+                                                    ]
+                                                }
+                                            }]
+                                        }
+                                    }]
+                                }
+                            }
+                        }
+                    }]
+                }
+            }
+        });
+        let mut ids = Vec::new();
+        collect_playlist_ids(&response, &mut ids);
+        assert_eq!(ids, vec!["dQw4w9WgXcQ", "aqz-KE-bpKQ"]);
+        assert!(is_playlist(
+            &Url::parse("https://www.youtube.com/playlist?list=PL123").unwrap()
+        ));
     }
 }

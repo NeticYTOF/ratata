@@ -41,6 +41,12 @@ use std::io::stdout;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunOutcome {
+    Quit,
+    Back,
+}
+
 /// Force Windows consoles into VT/ANSI mode; harmless on other platforms.
 pub fn enable_color() {
     #[cfg(windows)]
@@ -50,7 +56,11 @@ pub fn enable_color() {
     }
 }
 
-pub async fn run(jobs: Vec<DownloadJob>, config: Config, client: Arc<Client>) -> Result<()> {
+pub async fn run(
+    jobs: Vec<DownloadJob>,
+    config: Config,
+    client: Arc<Client>,
+) -> Result<RunOutcome> {
     enable_color();
     let (tx, rx) = mpsc::unbounded_channel::<JobProgress>();
     let manager = Arc::new(DownloadManager::new(

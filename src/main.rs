@@ -205,159 +205,200 @@ async fn run() -> Result<()> {
         None => urls.extend(cli.urls),
     }
 
-    if urls.is_empty() {
-        if io::stdin().is_terminal() {
-            print_banner();
-            println!("  Paste a link from YouTube, Instagram, Spotify and more.");
-            println!(
-                "  Examples: ratata https://youtube.com/watch?v=...  |  ratata --mp3 https://soundcloud.com/...\n"
-            );
-            urls.push(prompt_url()?);
-            if !mp3_mode && !cli.audio_only && !cli.all_formats && !cli.list_formats {
-                mp3_mode = prompt_mp3()?;
+    loop {
+        if urls.is_empty() {
+            if io::stdin().is_terminal() {
+                print_banner();
+                println!("  Paste a link from YouTube, Instagram, Spotify and more.");
+                println!(
+                    "  Playlists work too — paste a YouTube playlist link to queue every video.\n"
+                );
+                urls.push(prompt_url()?);
+                if !mp3_mode && !cli.audio_only && !cli.all_formats && !cli.list_formats {
+                    mp3_mode = prompt_mp3()?;
+                }
+            } else {
+                Cli::command().print_help()?;
+                return Ok(());
             }
-        } else {
-            Cli::command().print_help()?;
-            return Ok(());
         }
-    }
 
-    let client = http::build_client(&config)?;
-    let mut jobs: Vec<DownloadJob> = Vec::new();
-    let mut used_paths: HashSet<PathBuf> = HashSet::new();
-    let mut next_id = 0usize;
-    for url in urls.iter() {
-        let parsed = match Url::parse(url) {
-            Ok(parsed)
-                if matches!(parsed.scheme(), "http" | "https") && parsed.host_str().is_some() =>
-            {
-                parsed
-            }
-            _ => {
-                jobs.push(invalid_job(
-                    next_id,
-                    url,
-                    "That does not look like a link. Try: paste a full URL starting with https://",
-                ));
-                next_id += 1;
-                continue;
-            }
-        };
-        let mut sources: Vec<(Media, Option<AudioMeta>)> = Vec::new();
-        if extract::music::is_spotify(&parsed) || extract::music::is_apple_music(&parsed) {
-            println!("  · Reading track metadata…");
-            let _ = io::stdout().flush();
-            let tracks = tokio::time::timeout(
-                std::time::Duration::from_secs(20),
-                extract::music::metadata(&parsed, &client),
-            )
-            .await
-            .context("Reading track metadata timed out")??;
-            for track in tracks {
-                println!("  · {} → matched on YouTube Music (audio)", track.source);
-                let _ = io::stdout().flush();
-                let media = tokio::time::timeout(
-                    std::time::Duration::from_secs(30),
-                    extract::music::match_on_youtube(&track, &client),
-                )
-                .await
-                .context("Matching this track on YouTube Music timed out")??;
-                let meta = AudioMeta {
-                    title: track.title.clone(),
-                    artist: track.artist.clone(),
-                    album: track.album.clone(),
-                    year: track.year,
-                    track: track.track,
-                    artwork: track.artwork.clone(),
-                };
-                sources.push((media, Some(meta)));
-            }
-        } else {
-            match extract::extract(url, &client, &config).await {
-                Ok(media) => sources.push((media, None)),
-                Err(error) => {
-                    jobs.push(invalid_job(next_id, url, &friendly_short_reason(&error)));
+        let client = http::build_client(&config)?;
+        let mut jobs: Vec<DownloadJob> = Vec::new();
+        let mut used_paths: HashSet<PathBuf> = HashSet::new();
+        let mut next_id = 0usize;
+        for url in urls.iter() {
+            let parsed = match Url::parse(url) {
+                Ok(parsed)
+                    if matches!(parsed.scheme(), "http" | "https")
+                        && parsed.host_str().is_some() =>
+                {
+                    parsed
+                }
+                _ => {
+                    jobs.push(invalid_job(
+                        next_id,
+                        url,
+                        "That does not look like a link. Try: paste a full URL starting with https://",
+                    ));
                     next_id += 1;
                     continue;
                 }
-            }
-        }
-
-        for (media, meta) in sources {
-            let mut media = media;
-            if mp3_mode && meta.is_none() {
-                media.title = clean_music_title(&media.title);
-            }
-            if cli.list_formats {
-                print_media(&media);
-                continue;
-            }
-            let prefer_audio =
-                mp3_mode || cli.audio_only || extract::music::is_youtube_music(&parsed);
-            let choices: Vec<(MediaFormat, Option<String>)> = if cli.all_formats {
-                media
-                    .formats
-                    .iter()
-                    .cloned()
-                    .map(|format| {
-                        let suffix =
-                            format!("{}_{}", format.kind.label(), sanitize_filename(&format.id));
-                        (format, Some(suffix))
-                    })
-                    .collect()
-            } else {
-                vec![(
-                    choose_format(&media, cli.format.as_deref(), prefer_audio)?,
-                    None,
-                )]
             };
-            for (format, suffix) in choices {
-                let base = destination_for(
-                    &media,
-                    &format,
-                    &config,
-                    cli.output.as_deref(),
-                    suffix.as_deref(),
-                    &mut used_paths,
-                )?;
-                let (destination, temp, mp3) = if mp3_mode {
-                    let mut meta = meta.clone().unwrap_or_else(|| AudioMeta {
-                        title: media.title.clone(),
-                        artist: media.author.clone().unwrap_or_default(),
-                        artwork: media.thumbnail.clone(),
-                        ..AudioMeta::default()
-                    });
-                    meta.title = clean_music_title(&meta.title);
-                    (base.with_extension("mp3"), Some(base), Some(meta))
+            let mut sources: Vec<(Media, Option<AudioMeta>)> = Vec::new();
+            if extract::youtube::is_playlist(&parsed) {
+                println!("  · Reading playlist…");
+                let _ = io::stdout().flush();
+                match extract::youtube::playlist_video_ids(&parsed, &client, &config).await {
+                    Ok(ids) => {
+                        println!("  · {} videos in playlist", ids.len());
+                        for id in ids {
+                            let watch = format!("https://www.youtube.com/watch?v={id}");
+                            match extract::extract(&watch, &client, &config).await {
+                                Ok(media) => sources.push((media, None)),
+                                Err(error) => {
+                                    jobs.push(invalid_job(
+                                        next_id,
+                                        &watch,
+                                        &friendly_short_reason(&error),
+                                    ));
+                                    next_id += 1;
+                                }
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        jobs.push(invalid_job(next_id, url, &friendly_short_reason(&error)));
+                        next_id += 1;
+                    }
+                }
+            } else if extract::music::is_spotify(&parsed) || extract::music::is_apple_music(&parsed)
+            {
+                println!("  · Reading track metadata…");
+                let _ = io::stdout().flush();
+                let tracks = tokio::time::timeout(
+                    std::time::Duration::from_secs(20),
+                    extract::music::metadata(&parsed, &client),
+                )
+                .await
+                .context("Reading track metadata timed out")??;
+                for track in tracks {
+                    println!("  · {} → matched on YouTube Music (audio)", track.source);
+                    let _ = io::stdout().flush();
+                    let media = tokio::time::timeout(
+                        std::time::Duration::from_secs(30),
+                        extract::music::match_on_youtube(&track, &client),
+                    )
+                    .await
+                    .context("Matching this track on YouTube Music timed out")??;
+                    let meta = AudioMeta {
+                        title: track.title.clone(),
+                        artist: track.artist.clone(),
+                        album: track.album.clone(),
+                        year: track.year,
+                        track: track.track,
+                        artwork: track.artwork.clone(),
+                    };
+                    sources.push((media, Some(meta)));
+                }
+            } else {
+                match extract::extract(url, &client, &config).await {
+                    Ok(media) => sources.push((media, None)),
+                    Err(error) => {
+                        jobs.push(invalid_job(next_id, url, &friendly_short_reason(&error)));
+                        next_id += 1;
+                        continue;
+                    }
+                }
+            }
+
+            for (media, meta) in sources {
+                let mut media = media;
+                if mp3_mode && meta.is_none() {
+                    media.title = clean_music_title(&media.title);
+                }
+                if cli.list_formats {
+                    print_media(&media);
+                    continue;
+                }
+                let prefer_audio =
+                    mp3_mode || cli.audio_only || extract::music::is_youtube_music(&parsed);
+                let choices: Vec<(MediaFormat, Option<String>)> = if cli.all_formats {
+                    media
+                        .formats
+                        .iter()
+                        .cloned()
+                        .map(|format| {
+                            let suffix = format!(
+                                "{}_{}",
+                                format.kind.label(),
+                                sanitize_filename(&format.id)
+                            );
+                            (format, Some(suffix))
+                        })
+                        .collect()
                 } else {
-                    (base, None, None)
+                    vec![(
+                        choose_format(&media, cli.format.as_deref(), prefer_audio)?,
+                        None,
+                    )]
                 };
-                used_paths.insert(destination.clone());
-                jobs.push(DownloadJob {
-                    id: next_id,
-                    media: media.clone(),
-                    format,
-                    destination,
-                    temp,
-                    mp3,
-                    keep_source: cli.keep_source,
-                    validation_error: None,
-                });
-                next_id += 1;
+                for (format, suffix) in choices {
+                    let base = destination_for(
+                        &media,
+                        &format,
+                        &config,
+                        cli.output.as_deref(),
+                        suffix.as_deref(),
+                        &mut used_paths,
+                    )?;
+                    let (destination, temp, mp3) = if mp3_mode {
+                        let mut meta = meta.clone().unwrap_or_else(|| AudioMeta {
+                            title: media.title.clone(),
+                            artist: media.author.clone().unwrap_or_default(),
+                            artwork: media.thumbnail.clone(),
+                            ..AudioMeta::default()
+                        });
+                        meta.title = clean_music_title(&meta.title);
+                        (base.with_extension("mp3"), Some(base), Some(meta))
+                    } else {
+                        (base, None, None)
+                    };
+                    used_paths.insert(destination.clone());
+                    jobs.push(DownloadJob {
+                        id: next_id,
+                        media: media.clone(),
+                        format,
+                        destination,
+                        temp,
+                        mp3,
+                        keep_source: cli.keep_source,
+                        validation_error: None,
+                    });
+                    next_id += 1;
+                }
             }
         }
-    }
-    if jobs.is_empty() {
-        return Ok(());
-    }
-    if jobs.iter().any(|job| job.media.platform.contains('→')) {
-        println!("  note: audio matched on a public YouTube source, not Spotify/Apple");
-    }
-    let client = Arc::new(client);
-    if config.tui && !cli.no_tui {
-        ratata::ui::run(jobs, config.clone(), client).await?;
-    } else {
-        download::run_plain(jobs, &config, client).await?;
+        if jobs.is_empty() {
+            return Ok(());
+        }
+        if jobs.iter().any(|job| job.media.platform.contains('→')) {
+            println!("  note: audio matched on a public YouTube source, not Spotify/Apple");
+        }
+        let client = Arc::new(client);
+        let outcome = if config.tui && !cli.no_tui {
+            ratata::ui::run(jobs, config.clone(), client).await?
+        } else {
+            download::run_plain(jobs, &config, client).await?;
+            ratata::ui::RunOutcome::Quit
+        };
+        if outcome == ratata::ui::RunOutcome::Back {
+            urls.clear();
+            print_banner();
+            println!("  Back to start. Paste another link, or press Ctrl+C to quit.\n");
+            continue;
+        }
+        break;
     }
     Ok(())
 }

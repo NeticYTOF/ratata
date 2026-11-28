@@ -31,6 +31,9 @@ Updated: 2026-11-27
   per-job temp/final paths avoid collisions, invalid links become friendly failed rows,
 - Summary screen now shows friendly failure reasons on failed rows and hides the saved-folder line when zero files were saved.
 - User-facing CLI/TUI errors strip raw URLs and query strings; verbose/RATATA_DEBUG keeps full detail.
+- `Esc` returns to the first prompt instead of quitting; `q` still quits.
+- Public YouTube playlist links queue all videos; batch URLs can be extended after `Esc`.
+- Removed the superseded `BRIEF*.md` files.
 
 ## Speed benchmarks (`scripts/bench.py`, Windows, release build)
 

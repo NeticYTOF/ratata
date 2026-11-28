@@ -20,6 +20,7 @@ cargo install --git https://github.com/NeticYTOF/ratata
 ```sh
 ratata https://www.youtube.com/watch?v=...
 ratata https://www.instagram.com/reel/... "https://vimeo.com/..."
+ratata "https://www.youtube.com/playlist?list=PL..."
 ratata --mp3 https://soundcloud.com/forss/flickermood
 ratata mp3 "https://open.spotify.com/track/..."
 ratata info https://www.youtube.com/watch?v=...
@@ -27,6 +28,8 @@ ratata info https://www.youtube.com/watch?v=...
 
 Paste a link and Ratata saves the best version to your Downloads folder. With no
 arguments in a terminal it asks for a link and whether you want Video or MP3.
+Public YouTube playlist links queue every video; several URLs can be pasted in
+one command or added later after pressing `Esc`.
 
 - `--mp3` saves tagged MP3 (192 kbps, ID3 tags and cover art). Needs `ffmpeg`.
 - Spotify and Apple Music links are **not downloaded from those services**. Ratata
@@ -34,8 +37,8 @@ arguments in a terminal it asks for a link and whether you want Video or MP3.
   saves that. Albums/playlists are processed track by track.
 - YouTube Music links prefer the best audio track.
 - `--no-tui` gives plain output for scripts; non-interactive use exits automatically.
-- Press `q` to cancel, `p` to pause, `↑`/`↓` to select. The final summary stays open
-  until you press a key.
+- Press `Esc` to go back to the start, `q` to quit, `p` to pause, `↑`/`↓` to select.
+  The final summary stays open until you press a key.
 
 Run `ratata --help-all` for advanced options (format, cookies, segment counts).
 

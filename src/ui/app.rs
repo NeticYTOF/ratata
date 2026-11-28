@@ -31,6 +31,7 @@ pub(crate) struct App {
     pub(crate) finished: Option<Instant>,
     pub(crate) finished_at: BTreeMap<usize, Instant>,
     pub(crate) phase: Phase,
+    pub(crate) back: bool,
     pub(crate) total_speed: f64,
     pub(crate) total_bytes: u64,
 }
@@ -40,7 +41,7 @@ pub(crate) async fn run_screen(
     manager: &Arc<DownloadManager>,
     jobs: Vec<DownloadJob>,
     mut rx: mpsc::UnboundedReceiver<JobProgress>,
-) -> Result<()> {
+) -> Result<super::RunOutcome> {
     let mut app = App::new(jobs);
     let mut events = EventStream::new();
     let mut timer = tokio::time::interval(Duration::from_millis(50));
@@ -59,7 +60,11 @@ pub(crate) async fn run_screen(
         }
         terminal.draw(|frame| render::draw(&app, frame))?;
     }
-    Ok(())
+    Ok(if app.back {
+        super::RunOutcome::Back
+    } else {
+        super::RunOutcome::Quit
+    })
 }
 
 impl App {
@@ -102,6 +107,7 @@ impl App {
             finished: None,
             finished_at: BTreeMap::new(),
             phase: Phase::Running,
+            back: false,
             total_speed: 0.0,
             total_bytes,
         }
@@ -109,13 +115,19 @@ impl App {
 
     fn key(&mut self, code: KeyCode, manager: &Arc<DownloadManager>) -> bool {
         match code {
-            KeyCode::Enter | KeyCode::Char(' ') if self.phase == Phase::Summary => true,
-            KeyCode::Char(_) if self.phase == Phase::Summary => true,
-            KeyCode::Char('q') | KeyCode::Esc => {
+            KeyCode::Esc => {
+                manager.cancel();
+                self.back = true;
+                self.message = "back to start".into();
+                true
+            }
+            KeyCode::Char('q') => {
                 manager.cancel();
                 self.message = "cancelled".into();
                 true
             }
+            KeyCode::Enter | KeyCode::Char(' ') if self.phase == Phase::Summary => true,
+            KeyCode::Char(_) if self.phase == Phase::Summary => true,
             KeyCode::Char('p') | KeyCode::Char(' ') => {
                 let paused = !manager.is_paused();
                 manager.set_pause(paused);
@@ -213,9 +225,10 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Media, MediaFormat, MediaKind};
+    use crate::{Config, Media, MediaFormat, MediaKind};
     use ratatui::backend::TestBackend;
     use ratatui::buffer::Buffer;
+    use reqwest::Client;
 
     #[test]
     fn renders_aligned_rows_and_summary() {
@@ -290,5 +303,16 @@ mod tests {
         assert!(rendered.contains("YT"));
         assert!(rendered.contains("MiB"));
         assert!(rendered.contains('%'));
+    }
+
+    #[test]
+    fn escape_goes_back_while_q_quits() {
+        let manager = Arc::new(DownloadManager::new(Config::default(), Client::new(), None));
+        let mut app = App::new(Vec::new());
+        assert!(app.key(KeyCode::Esc, &manager));
+        assert!(app.back);
+        let mut app = App::new(Vec::new());
+        assert!(app.key(KeyCode::Char('q'), &manager));
+        assert!(!app.back);
     }
 }
