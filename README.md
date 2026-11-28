@@ -1,82 +1,157 @@
-# Ratata
+# RATATA
 
-Download videos, audio and images from social sites — fast, simple, and native.
-Ratata uses parallel connections, resumes interrupted downloads, and shows a clean
-progress screen. No account or API key needed.
+FAST NATIVE DOWNLOADER
 
-## Install
+RATATA saves video audio and images from public links
+18 named services plus direct media links and generic pages
+no account needed
+no API key needed
 
-Download a ready-made binary from [Releases](https://github.com/NeticYTOF/ratata/releases)
-(Windows x86_64 zip, Linux x86_64 static musl tar.gz — works on older glibc distros).
-On Linux: `tar xzf ratata-v0.1.0-x86_64-unknown-linux-gnu.tar.gz && ./ratata --help`
-(the tar file preserves the executable bit). Or install from source with Rust:
+## WHY
 
-```sh
-cargo install --git https://github.com/NeticYTOF/ratata
-```
+built in Rust
+parallel segmented downloads
+resume after interruption
+clean progress screen
+private links work with cookies
 
-## Use
+## INSTALL
 
-```sh
-ratata https://www.youtube.com/watch?v=...
-ratata https://www.instagram.com/reel/... "https://vimeo.com/..."
-ratata "https://www.youtube.com/playlist?list=PL..."
-ratata --mp3 https://soundcloud.com/forss/flickermood
-ratata mp3 "https://open.spotify.com/track/..."
-ratata info https://www.youtube.com/watch?v=...
-```
+download a binary from RELEASES
 
-Paste a link and Ratata saves the best version to your Downloads folder. With no
-arguments in a terminal it asks for a link and whether you want Video or MP3.
-Public YouTube, Spotify and Apple Music playlist/album links queue every track.
-Several URLs can be pasted in one command or added later after pressing `Esc`.
+https://github.com/NeticYTOF/ratata/releases
 
-- `--mp3` saves tagged MP3 (192 kbps, ID3 tags and cover art). Needs `ffmpeg`.
-- Spotify and Apple Music links are **not downloaded from those services**. Ratata
-  reads track metadata, finds the matching audio on a public YouTube source, and
-  saves that. Albums/playlists are processed track by track.
-- YouTube Music links prefer the best audio track.
-- `--no-tui` gives plain output for scripts; non-interactive use exits automatically.
-- Press `Esc` to go back to the start, `q` to quit, `p` to pause, `↑`/`↓` to select.
-  The final summary stays open until you press a key.
+WINDOWS x86_64 zip
+LINUX x86_64 static musl tar.gz
 
-Run `ratata --help-all` for advanced options (format, cookies, segment counts).
+LINUX
 
-## Supported sites
+    tar xzf ratata-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
+    ./ratata --help
 
-YouTube, YouTube Music, Instagram, X/Twitter, TikTok, Reddit, Vimeo, Dailymotion,
-Streamable, Twitch clips, SoundCloud, Imgur, Pinterest, Bilibili, Kick, Facebook,
-Spotify and Apple Music metadata matching, direct media links and HTML pages with
-Open Graph or JSON-LD media. Private posts need a Netscape cookie file:
-`ratata URL --cookies cookies.txt`.
+FROM SOURCE
 
-Reddit blocks many datacenter IPs; Ratata tries `www`, `api`, and `old` endpoints.
-Some sites (notably Reddit and sometimes Bilibili, Vimeo or SoundCloud) block
-datacenter IPs with HTTP 403/412 even when the same link works at home. Ratata
-reports the real error and suggests cookies when that happens.
+    cargo install --git https://github.com/NeticYTOF/ratata
 
-## Config
+## RUN
 
-Settings live in your platform config directory (`dirs::config_dir()/ratata/config.toml`):
+    ratata https://www.youtube.com/watch?v=...
+    ratata https://www.instagram.com/reel/...
+    ratata "https://www.youtube.com/playlist?list=PL..."
+    ratata --mp3 https://soundcloud.com/forss/flickermood
+    ratata mp3 "https://open.spotify.com/track/..."
+    ratata info https://www.youtube.com/watch?v=...
 
-```sh
-ratata config init
-ratata config show
-```
+no args opens a prompt
+paste a link
+answer VIDEO or MP3
 
-Defaults: downloads to `~/Downloads/Ratata`, 8 segments, 3 concurrent downloads,
-4 retries. Override with `--output`, `--segments`, `--retries`, `--overwrite`.
+PUBLIC PLAYLISTS
 
-## Development
+YouTube
+Spotify
+Apple Music
 
-```sh
-cargo test --all-targets
-cargo clippy --all-targets -- -D warnings
-python scripts/bench.py --ratata target/release/ratata
-```
+every track queued
 
-CI builds and tests on Windows and Linux once GitHub Actions is enabled.
+KEYS
 
-## License
+Esc back to start
+q quit
+p pause
+up down select
+summary waits for a key
+
+MP3
+
+--mp3 saves tagged MP3
+192 kbps
+ID3 tags
+cover art
+needs ffmpeg
+
+SPOTIFY AND APPLE MUSIC
+
+NOT downloaded from those services
+metadata read
+audio matched on a public YouTube source
+tracks queued one by one
+
+PLAIN MODE
+
+--no-tui
+non interactive exits normally
+
+MORE
+
+ratata --help-all
+
+## SUPPORTED
+
+18 named services
+
+YouTube
+YouTube Music
+Instagram
+X Twitter
+TikTok
+Reddit
+Vimeo
+Dailymotion
+Streamable
+Twitch clips
+SoundCloud
+Imgur
+Pinterest
+Bilibili
+Kick
+Facebook
+Spotify
+Apple Music
+
+plus direct media links
+plus generic pages with Open Graph or JSON LD
+
+private posts
+
+    ratata URL --cookies cookies.txt
+
+some sites block datacenter IPs
+Reddit often
+Bilibili Vimeo SoundCloud sometimes
+errors stay short
+verbose keeps full detail
+
+## CONFIG
+
+settings in config dir
+ratata/config.toml
+
+    ratata config init
+    ratata config show
+
+defaults
+
+downloads to ~/Downloads/Ratata
+8 segments
+3 concurrent downloads
+4 retries
+
+flags
+
+--output
+--segments
+--retries
+--overwrite
+
+## DEVELOP
+
+    cargo test --all-targets
+    cargo clippy --all-targets -- -D warnings
+    python scripts/bench.py --ratata target/release/ratata
+
+CI builds on Windows and Linux when Actions is enabled
+
+## LICENSE
 
 MIT
